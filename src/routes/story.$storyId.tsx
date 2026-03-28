@@ -36,6 +36,14 @@ import {
   parseCardJson,
   type ParsedCharacterCard,
 } from '@/lib/importers/tavern-card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { Upload, BookOpen, MessageSquare, List } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { TimelineTabs } from '@/components/prose/TimelineTabs'
@@ -77,6 +85,7 @@ function StoryEditorPage() {
   const [askLibrarianFragmentId, setAskLibrarianFragmentId] = useState<string | null>(null)
   const [askLibrarianPrefill, setAskLibrarianPrefill] = useState<string | null>(null)
   const [fileDragOver, setFileDragOver] = useState(false)
+  const [pendingAgentConfigImport, setPendingAgentConfigImport] = useState<{ agentName: string; displayName?: string; config: unknown } | null>(null)
   const [timelineBarVisible, setTimelineBarVisible] = useTimelineBar()
   const OUTLINE_OPEN_KEY = 'errata:passages-panel-open'
   const [outlineOpen, setOutlineOpen] = useState(() => {
@@ -379,6 +388,36 @@ function StoryEditorPage() {
       e.preventDefault()
     }
 
+    // Parse JSON text once and route to the right importer based on shape
+    const routeJsonImport = async (text: string) => {
+      // Try tavern card JSON
+      const cardParsed = parseCardJson(text)
+      if (cardParsed) {
+        setCardImportData(cardParsed)
+        setCardImportImageUrl(null)
+        setShowCardImport(true)
+        return
+      }
+
+      // Try Errata fragment export (_errata marker)
+      const errataExport = parseErrataExport(text)
+      if (errataExport) {
+        setImportInitialData(errataExport)
+        setShowImportDialog(true)
+        return
+      }
+
+      // Try agent block config (agentName + config fields)
+      try {
+        const json = JSON.parse(text)
+        if (json && typeof json.agentName === 'string' && json.config) {
+          setPendingAgentConfigImport(json)
+        }
+      } catch {
+        // not valid JSON
+      }
+    }
+
     const handleDrop = async (e: DragEvent) => {
       e.preventDefault()
       dragCounter.current = 0
@@ -432,22 +471,7 @@ function StoryEditorPage() {
       if (nonCardFile) {
         try {
           const text = await readFileAsText(nonCardFile)
-
-          // Try tavern card JSON first
-          const cardParsed = parseCardJson(text)
-          if (cardParsed) {
-            setCardImportData(cardParsed)
-            setCardImportImageUrl(null)
-            setShowCardImport(true)
-            return
-          }
-
-          // Then try Errata export
-          const parsed = parseErrataExport(text)
-          if (parsed) {
-            setImportInitialData(parsed)
-            setShowImportDialog(true)
-          }
+          await routeJsonImport(text)
         } catch {
           // Not a valid file, ignore
         }
@@ -464,7 +488,7 @@ function StoryEditorPage() {
       document.removeEventListener('dragover', handleDragOver)
       document.removeEventListener('drop', handleDrop)
     }
-  }, [])
+  }, [storyId, queryClient])
 
   if (isLoading) {
     return (
@@ -742,7 +766,7 @@ function StoryEditorPage() {
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-16 py-12">
             <Upload className="size-8 text-primary/50" />
             <p className="text-sm font-medium text-primary/70">Drop file to import</p>
-            <p className="text-xs text-muted-foreground">JSON fragment, bundle, character card, or PNG</p>
+            <p className="text-xs text-muted-foreground">JSON fragment, bundle, character card, agent config, or PNG</p>
           </div>
         </div>
       )}
@@ -769,6 +793,31 @@ function StoryEditorPage() {
         initialCardData={cardImportData}
         imageDataUrl={cardImportImageUrl}
       />
+
+      <Dialog open={!!pendingAgentConfigImport} onOpenChange={(open) => { if (!open) setPendingAgentConfigImport(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Agent Config</DialogTitle>
+            <DialogDescription>
+              Replace the <span className="font-medium text-foreground">{pendingAgentConfigImport?.displayName ?? pendingAgentConfigImport?.agentName}</span> context configuration with the imported one? This will overwrite custom blocks, overrides, and tool settings.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingAgentConfigImport(null)}>Cancel</Button>
+            <Button onClick={async () => {
+              if (!pendingAgentConfigImport) return
+              const { agentName, config } = pendingAgentConfigImport
+              try {
+                await api.agentBlocks.importConfig(storyId, agentName, config as any)
+                queryClient.invalidateQueries({ queryKey: ['agent-blocks', storyId, agentName] })
+              } catch {
+                // import failed silently
+              }
+              setPendingAgentConfigImport(null)
+            }}>Import</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   )
 }

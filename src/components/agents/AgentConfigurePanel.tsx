@@ -9,6 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -252,6 +254,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
   const dragItem = useRef<number | null>(null)
   const dragOverItem = useRef<number | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [pendingImportConfig, setPendingImportConfig] = useState<unknown>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const agent = agents.find(a => a.agentName === agentName)
@@ -480,48 +483,27 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
       const text = await file.text()
       const parsed = JSON.parse(text)
       const config = parsed.config ?? parsed
-      await api.agentBlocks.importConfig(storyId, agentName, config)
+      setPendingImportConfig(config)
+    } catch {
+      // silently fail
+    }
+  }, [])
+
+  const confirmImport = useCallback(async () => {
+    if (!pendingImportConfig) return
+    try {
+      await api.agentBlocks.importConfig(storyId, agentName, pendingImportConfig as any)
       queryClient.invalidateQueries({ queryKey: ['agent-blocks', storyId, agentName] })
     } catch {
       // silently fail
     }
-  }, [storyId, agentName, queryClient])
+    setPendingImportConfig(null)
+  }, [pendingImportConfig, storyId, agentName, queryClient])
 
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) await importFile(file)
     e.target.value = ''
-  }, [importFile])
-
-  const [isDraggingFile, setIsDraggingFile] = useState(false)
-  const dragCountRef = useRef(0)
-
-  const handleFileDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    dragCountRef.current++
-    if (e.dataTransfer.types.includes('Files')) setIsDraggingFile(true)
-  }, [])
-
-  const handleFileDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    dragCountRef.current--
-    if (dragCountRef.current <= 0) {
-      dragCountRef.current = 0
-      setIsDraggingFile(false)
-    }
-  }, [])
-
-  const handleFileDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }, [])
-
-  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault()
-    dragCountRef.current = 0
-    setIsDraggingFile(false)
-    const file = e.dataTransfer.files[0]
-    if (file?.name.endsWith('.json')) await importFile(file)
   }, [importFile])
 
   const roleTransitions = useMemo(() => {
@@ -554,23 +536,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
   const availableTools = data.availableTools ?? []
 
   return (
-    <div
-      className="flex h-full min-h-0 flex-col relative"
-      onDragEnter={handleFileDragEnter}
-      onDragLeave={handleFileDragLeave}
-      onDragOver={handleFileDragOver}
-      onDrop={handleFileDrop}
-    >
-      {/* File drop overlay */}
-      {isDraggingFile && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary/40 rounded-lg">
-          <div className="flex flex-col items-center gap-2 text-primary/60">
-            <Download className="size-8" />
-            <p className="text-sm font-medium">Drop to import config</p>
-          </div>
-        </div>
-      )}
-
+    <div className="flex h-full min-h-0 flex-col">
       {/* Header with back button */}
       <div className="px-3 py-2.5 border-b border-border/30 flex items-center gap-2">
         <button
@@ -1041,6 +1007,21 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
               className="border-t border-border/30"
             />
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!pendingImportConfig} onOpenChange={(open) => { if (!open) setPendingImportConfig(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Agent Config</DialogTitle>
+            <DialogDescription>
+              Replace the <span className="font-medium text-foreground">{agent?.displayName ?? agentName}</span> context configuration? This will overwrite custom blocks, overrides, and tool settings.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingImportConfig(null)}>Cancel</Button>
+            <Button onClick={confirmImport}>Import</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
