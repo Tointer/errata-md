@@ -6,6 +6,12 @@ import { PREFIXES } from '@/lib/fragment-ids'
 import { getContentRoot, initBranches } from './branches'
 import { createLogger } from '../logging'
 import { writeJsonAtomic } from '../fs-utils'
+import {
+  deleteFragmentMarkdown,
+  syncCompiledStoryFromCurrentChain,
+  syncFragmentMarkdown,
+  syncStoryMarkdownMeta,
+} from '../stories/markdown-repository'
 
 const requestLogger = createLogger('fragment-storage')
 
@@ -76,6 +82,7 @@ export async function createStory(
   await mkdir(dir, { recursive: true })
   await initBranches(dataDir, story.id)
   await writeJson(storyMetaPath(dataDir, story.id), story)
+  await syncStoryMarkdownMeta(dataDir, story)
 }
 
 export async function getStory(
@@ -107,6 +114,7 @@ export async function updateStory(
   story: StoryMeta
 ): Promise<void> {
   await writeJson(storyMetaPath(dataDir, story.id), story)
+  await syncStoryMarkdownMeta(dataDir, story)
 }
 
 export async function deleteStory(
@@ -130,6 +138,12 @@ export async function createFragment(
   await mkdir(dir, { recursive: true })
   const normalized = normalizeFragment(fragment)
   await writeJson(await fragmentPath(dataDir, storyId, fragment.id), normalized)
+  if (normalized) {
+    await syncFragmentMarkdown(dataDir, storyId, normalized)
+    if (normalized.type === 'prose' || normalized.type === 'marker') {
+      await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+    }
+  }
 }
 
 export async function getFragment(
@@ -187,6 +201,10 @@ export async function archiveFragment(
     updatedAt: new Date().toISOString(),
   }
   await writeJson(await fragmentPath(dataDir, storyId, fragmentId), updated)
+  await syncFragmentMarkdown(dataDir, storyId, updated)
+  if (updated.type === 'prose' || updated.type === 'marker') {
+    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+  }
   return updated
 }
 
@@ -203,6 +221,10 @@ export async function restoreFragment(
     updatedAt: new Date().toISOString(),
   }
   await writeJson(await fragmentPath(dataDir, storyId, fragmentId), updated)
+  await syncFragmentMarkdown(dataDir, storyId, updated)
+  if (updated.type === 'prose' || updated.type === 'marker') {
+    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+  }
   return updated
 }
 
@@ -215,6 +237,12 @@ export async function updateFragment(
   const path = await fragmentPath(dataDir, storyId, fragment.id)
   requestLogger.info('Updating fragment', { path })
   await writeJson(path, normalized)
+  if (normalized) {
+    await syncFragmentMarkdown(dataDir, storyId, normalized)
+    if (normalized.type === 'prose' || normalized.type === 'marker') {
+      await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+    }
+  }
 }
 
 export async function updateFragmentVersioned(
@@ -309,8 +337,13 @@ export async function deleteFragment(
   storyId: string,
   fragmentId: string
 ): Promise<void> {
+  const existing = await getFragment(dataDir, storyId, fragmentId)
   const path = await fragmentPath(dataDir, storyId, fragmentId)
   if (existsSync(path)) {
     await rm(path)
+  }
+  await deleteFragmentMarkdown(dataDir, storyId, fragmentId)
+  if (existing && (existing.type === 'prose' || existing.type === 'marker')) {
+    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
   }
 }
