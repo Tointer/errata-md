@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { rm } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { createTempDir, makeTestSettings } from '../setup'
 import {
   createStory,
@@ -99,11 +100,11 @@ describe('Story CRUD', () => {
     expect(result).toBeNull()
   })
 
-  it('reads story metadata from markdown when meta.json is absent', async () => {
+  it('persists story metadata without writing meta.json', async () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
-    await rm(join(dataDir, 'stories', story.id, 'meta.json'))
+    expect(existsSync(join(dataDir, 'stories', story.id, 'meta.json'))).toBe(false)
 
     const retrieved = await getStory(dataDir, story.id)
     expect(retrieved).not.toBeNull()
@@ -230,11 +231,11 @@ describe('Fragment CRUD', () => {
     expect(result).toBeNull()
   })
 
-  it('reads fragment data from markdown when fragment json is absent', async () => {
+  it('persists fragment data without writing json sidecars', async () => {
     const fragment = makeFragment({ id: 'pr-mdonly' })
     await createFragment(dataDir, storyId, fragment)
 
-    await rm(join(dataDir, 'stories', storyId, 'fragments', `${fragment.id}.json`))
+    expect(existsSync(join(dataDir, 'stories', storyId, 'fragments', `${fragment.id}.json`))).toBe(false)
 
     const retrieved = await getFragment(dataDir, storyId, fragment.id)
     expect(retrieved).not.toBeNull()
@@ -243,7 +244,56 @@ describe('Fragment CRUD', () => {
     expect(retrieved!.version).toBe(1)
   })
 
-  it('lists fragments from markdown when fragment json files are absent', async () => {
+  it('stores only generatedFrom and summary in prose markdown frontmatter', async () => {
+    const fragment = makeFragment({
+      id: 'pr-minmeta',
+      name: 'Hidden prose title',
+      description: 'Internal prose description',
+      tags: ['scene'],
+      refs: ['ch-mirea'],
+      meta: {
+        generatedFrom: 'Continue the scene after the blackout.',
+        _librarian: {
+          summary: 'Mirea is forced toward the tunnel exit.',
+          analysisId: 'la-1234',
+        },
+        annotations: [{ type: 'mention', fragmentId: 'ch-mirea', text: 'Mirea' }],
+        locked: true,
+      },
+    })
+
+    await createFragment(dataDir, storyId, fragment)
+
+    const markdownPath = join(dataDir, 'stories', storyId, 'Prose', '0000-pr-minmeta.md')
+    const rawMarkdown = await readFile(markdownPath, 'utf-8')
+
+    expect(rawMarkdown).toContain('generatedFrom: "Continue the scene after the blackout."')
+    expect(rawMarkdown).toContain('summary: "Mirea is forced toward the tunnel exit."')
+    expect(rawMarkdown).not.toContain('analysisId')
+    expect(rawMarkdown).not.toContain('annotations')
+    expect(rawMarkdown).not.toContain('name:')
+    expect(rawMarkdown).not.toContain('description:')
+
+    const internalPath = join(dataDir, 'stories', storyId, '.errata', 'prose-fragments.json')
+    expect(existsSync(internalPath)).toBe(true)
+
+    const internalRaw = await readFile(internalPath, 'utf-8')
+    expect(internalRaw).toContain('analysisId')
+    expect(internalRaw).toContain('annotations')
+    expect(internalRaw).toContain('Hidden prose title')
+    expect(internalRaw).not.toContain('generatedFrom')
+
+    const retrieved = await getFragment(dataDir, storyId, fragment.id)
+    expect(retrieved).not.toBeNull()
+    expect(retrieved!.name).toBe('Hidden prose title')
+    expect(retrieved!.description).toBe('Internal prose description')
+    expect(retrieved!.meta.generatedFrom).toBe('Continue the scene after the blackout.')
+    expect((retrieved!.meta._librarian as { summary: string; analysisId: string }).summary).toBe('Mirea is forced toward the tunnel exit.')
+    expect((retrieved!.meta._librarian as { summary: string; analysisId: string }).analysisId).toBe('la-1234')
+    expect(retrieved!.meta.locked).toBe(true)
+  })
+
+  it('lists fragments directly from markdown storage', async () => {
     const prose = makeFragment({ id: 'pr-mdlist' })
     const character = makeFragment({
       id: 'ch-mdlist',
@@ -256,12 +306,27 @@ describe('Fragment CRUD', () => {
     await createFragment(dataDir, storyId, prose)
     await createFragment(dataDir, storyId, character)
 
-    await rm(join(dataDir, 'stories', storyId, 'fragments', `${prose.id}.json`))
-    await rm(join(dataDir, 'stories', storyId, 'fragments', `${character.id}.json`))
-
     const listed = await listFragments(dataDir, storyId)
     expect(listed).toHaveLength(2)
     expect(listed.map((fragment) => fragment.id).sort()).toEqual(['ch-mdlist', 'pr-mdlist'])
+  })
+
+  it('prefers markdown content over stale json sidecars', async () => {
+    const fragment = makeFragment({ id: 'pr-mdwins', content: 'Old JSON content.' })
+    await createFragment(dataDir, storyId, fragment)
+
+    const markdownPath = join(dataDir, 'stories', storyId, 'Prose', '0000-pr-mdwins.md')
+    const original = await readFile(markdownPath, 'utf-8')
+    const updated = original.replace('Old JSON content.', 'Fresh markdown content.')
+    await writeFile(markdownPath, updated, 'utf-8')
+
+    const retrieved = await getFragment(dataDir, storyId, fragment.id)
+    expect(retrieved).not.toBeNull()
+    expect(retrieved!.content).toBe('Fresh markdown content.')
+
+    const listed = await listFragments(dataDir, storyId, 'prose')
+    const sameFragment = listed.find((item) => item.id === fragment.id)
+    expect(sameFragment?.content).toBe('Fresh markdown content.')
   })
 })
 

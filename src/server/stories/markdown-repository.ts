@@ -3,97 +3,25 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Fragment, ProseChain, StoryMeta } from '@/server/fragments/schema'
 import { getContentRoot } from '@/server/fragments/branches'
+import {
+  getCompiledStoryPath,
+  getFragmentFileName,
+  getFragmentFolder,
+  getInternalStoryRoot,
+  getMarkdownStoryRoot,
+  getProseFragmentIdFromFileName,
+  getStoryMetaPath,
+  STORY_DIRS,
+} from './markdown-paths'
+import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
+import { proseFragmentFromMarkdown, splitProseInternalMeta } from './prose-metadata'
+import {
+  readProseFragmentIndex,
+  removeProseFragmentInternalRecord,
+  upsertProseFragmentInternalRecord,
+} from './prose-fragment-index'
 
-const STORY_META_FILE = '_story.md'
-const STORY_OUTPUT_FILE = 'story.md'
-
-const FOLDER_BY_TYPE: Record<string, string> = {
-  prose: 'Prose',
-  character: 'Characters',
-  guideline: 'Guidelines',
-  knowledge: 'Lorebook',
-  marker: 'Markers',
-  image: 'Images',
-  icon: 'Icons',
-}
-
-const STORY_DIRS = [
-  'Guidelines',
-  'Characters',
-  'Lorebook',
-  'Prose',
-  'Markers',
-  'Images',
-  'Icons',
-  'Fragments',
-] as const
-
-function storiesDir(dataDir: string): string {
-  return join(dataDir, 'stories')
-}
-
-export function getMarkdownStoryRoot(dataDir: string, storyId: string): string {
-  return join(storiesDir(dataDir), storyId)
-}
-
-function getStoryMetaPath(dataDir: string, storyId: string): string {
-  return join(getMarkdownStoryRoot(dataDir, storyId), STORY_META_FILE)
-}
-
-export function getCompiledStoryPath(dataDir: string, storyId: string): string {
-  return join(getMarkdownStoryRoot(dataDir, storyId), STORY_OUTPUT_FILE)
-}
-
-function getFragmentFolder(type: string): string {
-  return FOLDER_BY_TYPE[type] ?? 'Fragments'
-}
-
-function getOrderPrefix(fragment: Fragment): string {
-  if (fragment.type !== 'prose' && fragment.type !== 'marker') return ''
-  return `${String(Math.max(0, fragment.order ?? 0)).padStart(4, '0')}-`
-}
-
-function getFragmentFileName(fragment: Fragment): string {
-  return `${getOrderPrefix(fragment)}${fragment.id}.md`
-}
-
-function serializeFrontmatter(attributes: Record<string, unknown>, body: string): string {
-  const lines = Object.entries(attributes).map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-  const normalizedBody = body.replace(/\r\n/g, '\n')
-  return `---\n${lines.join('\n')}\n---\n${normalizedBody}`
-}
-
-function parseFrontmatter(raw: string): { attributes: Record<string, unknown>; body: string } {
-  const normalized = raw.replace(/\r\n/g, '\n')
-  if (!normalized.startsWith('---\n')) {
-    return { attributes: {}, body: normalized }
-  }
-
-  const closingIndex = normalized.indexOf('\n---\n', 4)
-  if (closingIndex === -1) {
-    return { attributes: {}, body: normalized }
-  }
-
-  const header = normalized.slice(4, closingIndex)
-  const body = normalized.slice(closingIndex + 5)
-  const attributes: Record<string, unknown> = {}
-
-  for (const line of header.split('\n')) {
-    if (!line.trim()) continue
-    const separator = line.indexOf(':')
-    if (separator === -1) continue
-    const key = line.slice(0, separator).trim()
-    const valueText = line.slice(separator + 1).trim()
-    if (!key) continue
-    try {
-      attributes[key] = JSON.parse(valueText)
-    } catch {
-      attributes[key] = valueText
-    }
-  }
-
-  return { attributes, body }
-}
+export { getCompiledStoryPath, getMarkdownStoryRoot } from './markdown-paths'
 
 function serializeStoryMeta(story: StoryMeta): string {
   return serializeFrontmatter(
@@ -143,6 +71,11 @@ function storyMetaFromMarkdown(attributes: Record<string, unknown>, body: string
 }
 
 function serializeFragment(fragment: Fragment): string {
+  if (fragment.type === 'prose') {
+    const { markdownMeta } = splitProseInternalMeta(fragment.meta)
+    return serializeFrontmatter(markdownMeta, fragment.content)
+  }
+
   return serializeFrontmatter(
     {
       id: fragment.id,
@@ -163,7 +96,7 @@ function serializeFragment(fragment: Fragment): string {
   )
 }
 
-function fragmentFromMarkdown(attributes: Record<string, unknown>, body: string): Fragment | null {
+function fragmentFromLegacyMarkdown(attributes: Record<string, unknown>, body: string): Fragment | null {
   if (typeof attributes.id !== 'string' || typeof attributes.type !== 'string') return null
   return {
     id: attributes.id,
@@ -188,7 +121,10 @@ function fragmentFromMarkdown(attributes: Record<string, unknown>, body: string)
 export async function ensureMarkdownStoryLayout(dataDir: string, storyId: string): Promise<void> {
   const root = getMarkdownStoryRoot(dataDir, storyId)
   await mkdir(root, { recursive: true })
-  await Promise.all(STORY_DIRS.map((dirName) => mkdir(join(root, dirName), { recursive: true })))
+  await Promise.all([
+    ...STORY_DIRS.map((dirName) => mkdir(join(root, dirName), { recursive: true })),
+    mkdir(getInternalStoryRoot(dataDir, storyId), { recursive: true }),
+  ])
   const compiledPath = getCompiledStoryPath(dataDir, storyId)
   if (!existsSync(compiledPath)) {
     await writeFile(compiledPath, '', 'utf-8')
@@ -226,11 +162,32 @@ async function listMarkdownFragmentPaths(dataDir: string, storyId: string, fragm
   return matches
 }
 
+async function readCurrentProseChain(dataDir: string, storyId: string): Promise<ProseChain | null> {
+  const root = await getContentRoot(dataDir, storyId)
+  const chainPath = join(root, 'prose-chain.json')
+  if (!existsSync(chainPath)) return null
+  const raw = await readFile(chainPath, 'utf-8')
+  return JSON.parse(raw) as ProseChain
+}
+
+function findProseSectionIndex(chain: ProseChain | null, fragmentId: string): number | undefined {
+  if (!chain) return undefined
+  const index = chain.entries.findIndex((entry) => entry.proseFragments.includes(fragmentId))
+  return index === -1 ? undefined : index
+}
+
 export async function syncFragmentMarkdown(dataDir: string, storyId: string, fragment: Fragment): Promise<void> {
   await ensureMarkdownStoryLayout(dataDir, storyId)
 
+  if (fragment.type === 'prose') {
+    await upsertProseFragmentInternalRecord(dataDir, storyId, fragment)
+  }
+
   const folderPath = join(getMarkdownStoryRoot(dataDir, storyId), getFragmentFolder(fragment.type))
-  const nextPath = join(folderPath, getFragmentFileName(fragment))
+  const chain = fragment.type === 'prose' || fragment.type === 'marker'
+    ? await readCurrentProseChain(dataDir, storyId)
+    : null
+  const nextPath = join(folderPath, getFragmentFileName(fragment, findProseSectionIndex(chain, fragment.id)))
   const existingPaths = await listMarkdownFragmentPaths(dataDir, storyId, fragment.id)
 
   for (const path of existingPaths) {
@@ -249,15 +206,24 @@ export async function deleteFragmentMarkdown(dataDir: string, storyId: string, f
       await rm(path, { force: true })
     }
   }
+  await removeProseFragmentInternalRecord(dataDir, storyId, fragmentId)
 }
 
 export async function loadMarkdownFragmentById(dataDir: string, storyId: string, fragmentId: string): Promise<Fragment | null> {
   const paths = await listMarkdownFragmentPaths(dataDir, storyId, fragmentId)
   const path = paths[0]
   if (!path || !existsSync(path)) return null
+
   const raw = await readFile(path, 'utf-8')
   const parsed = parseFrontmatter(raw)
-  return fragmentFromMarkdown(parsed.attributes, parsed.body)
+  const proseDir = join(getMarkdownStoryRoot(dataDir, storyId), 'Prose')
+
+  if (path.startsWith(proseDir)) {
+    const proseIndex = await readProseFragmentIndex(dataDir, storyId)
+    return proseFragmentFromMarkdown(fragmentId, parsed.attributes, parsed.body, proseIndex[fragmentId], fragmentFromLegacyMarkdown)
+  }
+
+  return fragmentFromLegacyMarkdown(parsed.attributes, parsed.body)
 }
 
 export async function listMarkdownFragments(
@@ -272,6 +238,7 @@ export async function listMarkdownFragments(
   const includeArchived = opts?.includeArchived ?? false
   const folders = type ? [getFragmentFolder(type)] : [...STORY_DIRS]
   const fragments: Fragment[] = []
+  const proseIndex = folders.includes('Prose') ? await readProseFragmentIndex(dataDir, storyId) : {}
 
   for (const folder of folders) {
     const folderPath = join(root, folder)
@@ -281,7 +248,11 @@ export async function listMarkdownFragments(
       if (!entry.endsWith('.md')) continue
       const raw = await readFile(join(folderPath, entry), 'utf-8')
       const parsed = parseFrontmatter(raw)
-      const fragment = fragmentFromMarkdown(parsed.attributes, parsed.body)
+      const proseId = getProseFragmentIdFromFileName(entry)
+      const fragment = folder === 'Prose'
+        ? proseFragmentFromMarkdown(proseId, parsed.attributes, parsed.body, proseIndex[proseId], fragmentFromLegacyMarkdown)
+        : fragmentFromLegacyMarkdown(parsed.attributes, parsed.body)
+
       if (!fragment) continue
       if (type && fragment.type !== type) continue
       if (!includeArchived && fragment.archived) continue
@@ -293,14 +264,6 @@ export async function listMarkdownFragments(
     if (left.order !== right.order) return left.order - right.order
     return left.id.localeCompare(right.id)
   })
-}
-
-async function readCurrentProseChain(dataDir: string, storyId: string): Promise<ProseChain | null> {
-  const root = await getContentRoot(dataDir, storyId)
-  const chainPath = join(root, 'prose-chain.json')
-  if (!existsSync(chainPath)) return null
-  const raw = await readFile(chainPath, 'utf-8')
-  return JSON.parse(raw) as ProseChain
 }
 
 export async function writeCompiledStoryMarkdown(
@@ -330,4 +293,17 @@ export async function syncCompiledStoryFromCurrentChain(dataDir: string, storyId
   }
 
   await writeCompiledStoryMarkdown(dataDir, storyId, blocks)
+}
+
+export async function syncProseMarkdownOrder(dataDir: string, storyId: string): Promise<void> {
+  const chain = await readCurrentProseChain(dataDir, storyId)
+  if (!chain) return
+
+  for (const entry of chain.entries) {
+    for (const fragmentId of entry.proseFragments) {
+      const fragment = await loadMarkdownFragmentById(dataDir, storyId, fragmentId)
+      if (!fragment) continue
+      await syncFragmentMarkdown(dataDir, storyId, fragment)
+    }
+  }
 }

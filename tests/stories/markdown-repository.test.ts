@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createTempDir, makeTestSettings } from '../setup'
 import type { Fragment, StoryMeta } from '@/server/fragments/schema'
@@ -8,7 +8,7 @@ import {
   createStory,
   updateFragmentVersioned,
 } from '@/server/fragments/storage'
-import { addProseSection } from '@/server/fragments/prose-chain'
+import { addProseSection, addProseVariation } from '@/server/fragments/prose-chain'
 import {
   getCompiledStoryPath,
   getMarkdownStoryRoot,
@@ -115,6 +115,37 @@ describe('markdown story repository sync', () => {
       const secondPass = await readFile(compiledPath, 'utf-8')
       expect(secondPass).toContain('She stepped off the train into bitter dawn air.')
       expect(secondPass).not.toContain('She stepped off the train into cold air.')
+    } finally {
+      await tmp.cleanup()
+    }
+  })
+
+  it('numbers prose files by section order and keeps variations under the same number', async () => {
+    const tmp = await createTempDir()
+
+    try {
+      const story = makeStory('story-prose-order')
+      await createStory(tmp.path, story)
+
+      const first = makeFragment('pr-firstaa', { type: 'prose', name: 'First beat' })
+      const second = makeFragment('pr-seconda', { type: 'prose', name: 'Second beat' })
+      const variant = makeFragment('pr-variaaa', { type: 'prose', name: 'Second beat alt' })
+
+      await createFragment(tmp.path, story.id, first)
+      await addProseSection(tmp.path, story.id, first.id)
+
+      await createFragment(tmp.path, story.id, second)
+      await addProseSection(tmp.path, story.id, second.id)
+
+      await createFragment(tmp.path, story.id, variant)
+      await addProseVariation(tmp.path, story.id, 1, variant.id)
+
+      const proseDir = join(getMarkdownStoryRoot(tmp.path, story.id), 'Prose')
+      const files = (await readdir(proseDir)).sort()
+
+      expect(files).toContain('0000-pr-firstaa.md')
+      expect(files).toContain('0001-pr-seconda.md')
+      expect(files).toContain('0001-pr-variaaa.md')
     } finally {
       await tmp.cleanup()
     }

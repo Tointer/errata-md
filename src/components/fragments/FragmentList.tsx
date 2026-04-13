@@ -447,7 +447,8 @@ export function FragmentList({
   const { data: fragments, isLoading } = useQuery({
     queryKey: ['fragments', storyId, type, allowedTypes?.join(',') ?? 'all'],
     queryFn: () => api.fragments.list(storyId, type),
-    staleTime: 2_000,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: foldersData } = useQuery({
@@ -461,13 +462,15 @@ export function FragmentList({
   const { data: imageFragments } = useQuery({
     queryKey: ['fragments', storyId, 'image'],
     queryFn: () => api.fragments.list(storyId, 'image'),
-    staleTime: 10_000,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: iconFragments } = useQuery({
     queryKey: ['fragments', storyId, 'icon'],
     queryFn: () => api.fragments.list(storyId, 'icon'),
-    staleTime: 10_000,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const pinMutation = useMutation({
