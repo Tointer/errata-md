@@ -9,6 +9,7 @@
     "**/routeTree.gen.ts": true
   },
   "chat.tools.terminal.autoApprove": {
-    "bunx": true
+    "bunx": true,
+    "bun": true
   }
 }

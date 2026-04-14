@@ -255,7 +255,7 @@ export function createFragmentTools(
         content: z.string().describe('Full fragment content'),
       }),
       execute: withToolLogging('createFragment', storyId, async ({ type, name, description, content }) => {
-        const id = generateFragmentId(type)
+        const id = generateFragmentId(type, name)
         const now = new Date().toISOString()
         const fragment: Fragment = {
           id,

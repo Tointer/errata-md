@@ -61,7 +61,7 @@ describe('md-files repository sync', () => {
       const story = makeStory('story-mdsync')
       await createStory(tmp.path, story)
 
-      const guideline = makeFragment('gl-aaaaaa', {
+      const guideline = makeFragment('gl-voice', {
         type: 'guideline',
         name: 'Voice',
         description: 'Writing guidance',
@@ -79,7 +79,7 @@ describe('md-files repository sync', () => {
       const rootEntries = (await readdir(root)).sort()
       expect(rootEntries).toEqual(['.errata', 'Characters', 'Guidelines', 'Lorebook', 'Prose', 'story.md'])
 
-      const loaded = await loadMarkdownFragmentById(tmp.path, story.id, guideline.id)
+      const loaded = await loadMarkdownFragmentById(tmp.path, story.id, 'gl-voice')
       expect(loaded?.type).toBe('guideline')
       expect(loaded?.content).toBe('Keep the prose sharp and economical.')
     } finally {
@@ -119,6 +119,40 @@ describe('md-files repository sync', () => {
       const secondPass = await readFile(compiledPath, 'utf-8')
       expect(secondPass).toContain('She stepped off the train into bitter dawn air.')
       expect(secondPass).not.toContain('She stepped off the train into cold air.')
+    } finally {
+      await tmp.cleanup()
+    }
+  })
+
+  it('derives character ids from human-readable filenames and infers type from folder', async () => {
+    const tmp = await createTempDir()
+
+    try {
+      const story = makeStory('story-visible-file-names')
+      await createStory(tmp.path, story)
+
+      const character = makeFragment('ch-io-dren', {
+        type: 'character',
+        name: 'Io Dren',
+        description: 'Station archivist',
+        content: 'Keeps the paper archive running through the blackouts.',
+      })
+
+      await createFragment(tmp.path, story.id, character)
+
+      const characterDir = join(getMarkdownStoryRoot(tmp.path, story.id), 'Characters')
+      const files = await readdir(characterDir)
+      expect(files).toContain('Io Dren.md')
+
+      const raw = await readFile(join(characterDir, 'Io Dren.md'), 'utf-8')
+      expect(raw).not.toContain('\nid:')
+      expect(raw).not.toContain('\nname:')
+      expect(raw).not.toContain('\ntype:')
+
+      const loaded = await loadMarkdownFragmentById(tmp.path, story.id, 'ch-io-dren')
+      expect(loaded?.id).toBe('ch-io-dren')
+      expect(loaded?.type).toBe('character')
+      expect(loaded?.name).toBe('Io Dren')
     } finally {
       await tmp.cleanup()
     }

@@ -120,7 +120,7 @@ describe('LLM tools', () => {
       )
 
       expect(result.ok).toBe(true)
-      expect(result.id).toMatch(/^kn-/)
+      expect(result.id).toBe('kn-moon-ritual')
 
       const created = await getFragment(dataDir, storyId, result.id)
       expect(created).toBeTruthy()

@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { deriveFragmentIdFromName, usesNameDerivedFragmentId } from '@/lib/fragment-ids'
 import type { Fragment } from '@/server/fragments/schema'
 
 export const STORY_META_FILE = '_story.md'
@@ -11,6 +12,20 @@ const VISIBLE_FOLDER_BY_TYPE: Record<string, string> = {
   character: 'Characters',
   guideline: 'Guidelines',
   knowledge: 'Lorebook',
+}
+
+const TYPE_BY_VISIBLE_FOLDER: Record<string, string> = Object.fromEntries(
+  Object.entries(VISIBLE_FOLDER_BY_TYPE).map(([type, folder]) => [folder, type]),
+)
+
+const PREFIX_BY_TYPE: Record<string, string> = {
+  prose: 'pr',
+  character: 'ch',
+  guideline: 'gl',
+  knowledge: 'kn',
+  image: 'im',
+  icon: 'ic',
+  marker: 'mk',
 }
 
 const INTERNAL_FOLDER_BY_TYPE: Record<string, string> = {
@@ -71,6 +86,39 @@ export function getFragmentFolder(type: string): string {
   return join(INTERNAL_DIR, internalFolder)
 }
 
+export function getTypeForVisibleFolder(folder: string): string | null {
+  return TYPE_BY_VISIBLE_FOLDER[folder] ?? null
+}
+
+export const isVisibleFilenameDerivedType = usesNameDerivedFragmentId
+
+function sanitizeVisibleFileName(name: string): string {
+  const cleaned = name
+    .replace(/[<>:"/\\|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return cleaned || 'Untitled'
+}
+
+export function getVisibleFragmentBaseName(fragment: Fragment): string {
+  return sanitizeVisibleFileName(fragment.name)
+}
+
+function slugifyVisibleBaseName(baseName: string): string {
+  const cleaned = baseName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return cleaned || 'untitled'
+}
+
+export function getFilenameDerivedFragmentId(type: string, fileName: string): string {
+  const baseName = fileName.replace(/\.md$/i, '')
+  return deriveFragmentIdFromName(type, slugifyVisibleBaseName(baseName))
+}
+
 function getNumericPrefix(index: number): string {
   return `${String(Math.max(0, index)).padStart(4, '0')}-`
 }
@@ -78,6 +126,10 @@ function getNumericPrefix(index: number): string {
 export function getFragmentFileName(fragment: Fragment, sectionIndex?: number): string {
   if (fragment.type === 'prose' || fragment.type === 'marker') {
     return `${getNumericPrefix(sectionIndex ?? fragment.order ?? 0)}${fragment.id}.md`
+  }
+
+  if (isVisibleFilenameDerivedType(fragment.type)) {
+    return `${getVisibleFragmentBaseName(fragment)}.md`
   }
 
   return `${fragment.id}.md`

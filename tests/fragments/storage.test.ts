@@ -175,7 +175,7 @@ describe('Fragment CRUD', () => {
 
   it('updates content without storing native version history', async () => {
     const fragment = makeFragment({
-      id: 'ch-1000',
+      id: 'ch-alice',
       type: 'character',
       name: 'Alice',
       description: 'Original desc',
@@ -186,7 +186,7 @@ describe('Fragment CRUD', () => {
     const updated = await updateFragmentVersioned(
       dataDir,
       storyId,
-      'ch-1000',
+      'ch-alice',
       { content: 'Updated content', description: 'Updated desc' },
       { reason: 'test-refine' },
     )
@@ -200,7 +200,7 @@ describe('Fragment CRUD', () => {
 
   it('does not expose built-in version history anymore', async () => {
     const fragment = makeFragment({
-      id: 'gl-2000',
+      id: 'gl-tone',
       type: 'guideline',
       name: 'Tone',
       description: 'v1 desc',
@@ -208,10 +208,10 @@ describe('Fragment CRUD', () => {
     })
     await createFragment(dataDir, storyId, fragment)
 
-    await updateFragmentVersioned(dataDir, storyId, 'gl-2000', { content: 'v2 content', description: 'v2 desc' })
-    await updateFragmentVersioned(dataDir, storyId, 'gl-2000', { content: 'v3 content', description: 'v3 desc' })
+    await updateFragmentVersioned(dataDir, storyId, 'gl-tone', { content: 'v2 content', description: 'v2 desc' })
+    await updateFragmentVersioned(dataDir, storyId, 'gl-tone', { content: 'v3 content', description: 'v3 desc' })
 
-    const retrieved = await getFragment(dataDir, storyId, 'gl-2000')
+    const retrieved = await getFragment(dataDir, storyId, 'gl-tone')
     expect(retrieved).not.toBeNull()
     expect(retrieved!.content).toBe('v3 content')
     expect(retrieved!.version).toBe(1)
@@ -296,7 +296,7 @@ describe('Fragment CRUD', () => {
   it('lists fragments directly from markdown storage', async () => {
     const prose = makeFragment({ id: 'pr-mdlist' })
     const character = makeFragment({
-      id: 'ch-mdlist',
+      id: 'ch-asha',
       type: 'character',
       name: 'Asha',
       description: 'Pilot',
@@ -308,7 +308,7 @@ describe('Fragment CRUD', () => {
 
     const listed = await listFragments(dataDir, storyId)
     expect(listed).toHaveLength(2)
-    expect(listed.map((fragment) => fragment.id).sort()).toEqual(['ch-mdlist', 'pr-mdlist'])
+    expect(listed.map((fragment) => fragment.id).sort()).toEqual(['ch-asha', 'pr-mdlist'])
   })
 
   it('prefers markdown content over stale json sidecars', async () => {

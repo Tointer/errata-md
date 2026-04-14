@@ -3,17 +3,20 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Fragment, ProseChain, StoryMeta } from '@/server/fragments/schema'
 import {
+  getFilenameDerivedFragmentId,
   getCompiledStoryPath,
   getFragmentFileName,
   getFragmentFolder,
   getInternalStoryRoot,
   getInternalStoryPath,
   INTERNAL_MARKDOWN_DIRS,
+  isVisibleFilenameDerivedType,
   MARKDOWN_FRAGMENT_DIRS,
   getMarkdownStoryRoot,
   getProseFragmentIdFromFileName,
   getStoryMetaPath,
   STORY_DIRS,
+  getTypeForVisibleFolder,
 } from './paths'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import { proseFragmentFromMarkdown, splitProseInternalMeta } from './prose-metadata'
@@ -28,6 +31,24 @@ function serializeFragment(fragment: Fragment): string {
   if (fragment.type === 'prose') {
     const { markdownMeta } = splitProseInternalMeta(fragment.meta)
     return serializeFrontmatter(markdownMeta, fragment.content)
+  }
+
+  if (isVisibleFilenameDerivedType(fragment.type)) {
+    return serializeFrontmatter(
+      {
+        description: fragment.description,
+        tags: fragment.tags,
+        refs: fragment.refs,
+        sticky: fragment.sticky,
+        placement: fragment.placement,
+        order: fragment.order,
+        createdAt: fragment.createdAt,
+        updatedAt: fragment.updatedAt,
+        archived: fragment.archived ?? false,
+        meta: fragment.meta,
+      },
+      fragment.content,
+    )
   }
 
   return serializeFrontmatter(
@@ -72,6 +93,66 @@ function fragmentFromLegacyMarkdown(attributes: Record<string, unknown>, body: s
   }
 }
 
+function visibleFragmentFromMarkdown(
+  type: string,
+  fileName: string,
+  attributes: Record<string, unknown>,
+  body: string,
+): Fragment {
+  const baseName = fileName.replace(/\.md$/i, '')
+  return {
+    id: getFilenameDerivedFragmentId(type, fileName),
+    type,
+    name: baseName,
+    description: typeof attributes.description === 'string' ? attributes.description : '',
+    content: body,
+    tags: Array.isArray(attributes.tags) ? attributes.tags.filter((value): value is string => typeof value === 'string') : [],
+    refs: Array.isArray(attributes.refs) ? attributes.refs.filter((value): value is string => typeof value === 'string') : [],
+    sticky: Boolean(attributes.sticky),
+    placement: attributes.placement === 'system' ? 'system' : 'user',
+    createdAt: typeof attributes.createdAt === 'string' ? attributes.createdAt : new Date().toISOString(),
+    updatedAt: typeof attributes.updatedAt === 'string' ? attributes.updatedAt : new Date().toISOString(),
+    order: typeof attributes.order === 'number' ? attributes.order : 0,
+    meta: typeof attributes.meta === 'object' && attributes.meta !== null ? attributes.meta as Record<string, unknown> : {},
+    archived: Boolean(attributes.archived),
+    version: 1,
+    versions: [],
+  }
+}
+
+async function findMarkdownFragmentEntry(
+  dataDir: string,
+  storyId: string,
+  fragmentId: string,
+): Promise<Array<{ path: string; folder: string; entry: string }>> {
+  const root = getMarkdownStoryRoot(dataDir, storyId)
+  const matches: Array<{ path: string; folder: string; entry: string }> = []
+
+  for (const folder of MARKDOWN_FRAGMENT_DIRS) {
+    const folderPath = join(root, folder)
+    if (!existsSync(folderPath)) continue
+    const entries = await readdir(folderPath)
+    for (const entry of entries) {
+      if (!entry.endsWith('.md')) continue
+
+      let candidateId: string | null = null
+      const visibleType = getTypeForVisibleFolder(folder)
+      if (folder === 'Prose') {
+        candidateId = getProseFragmentIdFromFileName(entry)
+      } else if (visibleType && isVisibleFilenameDerivedType(visibleType)) {
+        candidateId = getFilenameDerivedFragmentId(visibleType, entry)
+      } else if (entry.includes(fragmentId)) {
+        candidateId = fragmentId
+      }
+
+      if (candidateId !== fragmentId) continue
+      matches.push({ path: join(folderPath, entry), folder, entry })
+    }
+  }
+
+  return matches
+}
+
 export async function ensureMarkdownStoryLayout(dataDir: string, storyId: string): Promise<void> {
   const root = getMarkdownStoryRoot(dataDir, storyId)
   await mkdir(root, { recursive: true })
@@ -100,21 +181,7 @@ export async function loadMarkdownStoryMeta(dataDir: string, storyId: string): P
 }
 
 async function listMarkdownFragmentPaths(dataDir: string, storyId: string, fragmentId: string): Promise<string[]> {
-  const root = getMarkdownStoryRoot(dataDir, storyId)
-  const matches: string[] = []
-
-  for (const folder of MARKDOWN_FRAGMENT_DIRS) {
-    const folderPath = join(root, folder)
-    if (!existsSync(folderPath)) continue
-    const entries = await readdir(folderPath)
-    for (const entry of entries) {
-      if (!entry.endsWith('.md')) continue
-      if (!entry.includes(fragmentId)) continue
-      matches.push(join(folderPath, entry))
-    }
-  }
-
-  return matches
+  return (await findMarkdownFragmentEntry(dataDir, storyId, fragmentId)).map((match) => match.path)
 }
 
 async function readCurrentProseChain(dataDir: string, storyId: string): Promise<ProseChain | null> {
@@ -141,8 +208,10 @@ export async function syncFragmentMarkdown(dataDir: string, storyId: string, fra
   const chain = fragment.type === 'prose' || fragment.type === 'marker'
     ? await readCurrentProseChain(dataDir, storyId)
     : null
-  const nextPath = join(folderPath, getFragmentFileName(fragment, findProseSectionIndex(chain, fragment.id)))
-  const existingPaths = await listMarkdownFragmentPaths(dataDir, storyId, fragment.id)
+  const existingEntries = await findMarkdownFragmentEntry(dataDir, storyId, fragment.id)
+  const existingPaths = existingEntries.map((entry) => entry.path)
+  const defaultPath = join(folderPath, getFragmentFileName(fragment, findProseSectionIndex(chain, fragment.id)))
+  const nextPath = defaultPath
 
   for (const path of existingPaths) {
     if (path !== nextPath && existsSync(path)) {
@@ -164,8 +233,9 @@ export async function deleteFragmentMarkdown(dataDir: string, storyId: string, f
 }
 
 export async function loadMarkdownFragmentById(dataDir: string, storyId: string, fragmentId: string): Promise<Fragment | null> {
-  const paths = await listMarkdownFragmentPaths(dataDir, storyId, fragmentId)
-  const path = paths[0]
+  const matches = await findMarkdownFragmentEntry(dataDir, storyId, fragmentId)
+  const match = matches[0]
+  const path = match?.path
   if (!path || !existsSync(path)) return null
 
   const raw = await readFile(path, 'utf-8')
@@ -175,6 +245,11 @@ export async function loadMarkdownFragmentById(dataDir: string, storyId: string,
   if (path.startsWith(proseDir)) {
     const proseIndex = await readProseFragmentIndex(dataDir, storyId)
     return proseFragmentFromMarkdown(fragmentId, parsed.attributes, parsed.body, proseIndex[fragmentId], fragmentFromLegacyMarkdown)
+  }
+
+  const visibleType = match ? getTypeForVisibleFolder(match.folder) : null
+  if (visibleType && isVisibleFilenameDerivedType(visibleType) && match) {
+    return visibleFragmentFromMarkdown(visibleType, match.entry, parsed.attributes, parsed.body)
   }
 
   return fragmentFromLegacyMarkdown(parsed.attributes, parsed.body)
@@ -198,6 +273,7 @@ export async function listMarkdownFragments(
     const folderPath = join(root, folder)
     if (!existsSync(folderPath)) continue
     const entries = await readdir(folderPath)
+    const visibleType = getTypeForVisibleFolder(folder)
     for (const entry of entries) {
       if (!entry.endsWith('.md')) continue
       const raw = await readFile(join(folderPath, entry), 'utf-8')
@@ -205,6 +281,8 @@ export async function listMarkdownFragments(
       const proseId = getProseFragmentIdFromFileName(entry)
       const fragment = folder === 'Prose'
         ? proseFragmentFromMarkdown(proseId, parsed.attributes, parsed.body, proseIndex[proseId], fragmentFromLegacyMarkdown)
+        : visibleType && isVisibleFilenameDerivedType(visibleType)
+          ? visibleFragmentFromMarkdown(visibleType, entry, parsed.attributes, parsed.body)
         : fragmentFromLegacyMarkdown(parsed.attributes, parsed.body)
 
       if (!fragment) continue

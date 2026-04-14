@@ -181,7 +181,7 @@ describe('context-builder', () => {
     const msg = messages.find((m) => m.role === 'user')
 
     // Shortlist should contain id and description but not full content
-    expect(msg!.content).toContain('gl-0002')
+    expect(msg!.content).toContain('gl-pov-rules')
     expect(msg!.content).toContain('Point of view constraints')
     expect(msg!.content).not.toContain('Always use third person limited.')
   })
@@ -323,7 +323,7 @@ describe('context-builder', () => {
     const msg = messages.find((m) => m.role === 'user')
 
     // Shortlist should contain id and description but not full content
-    expect(msg!.content).toContain('ch-0002')
+    expect(msg!.content).toContain('ch-villain')
     expect(msg!.content).toContain('The antagonist')
     expect(msg!.content).not.toContain('The dark lord rules with an iron fist.')
   })

@@ -160,6 +160,20 @@ describe('Fragment API routes', () => {
     expect(data[0].type).toBe('prose')
   })
 
+  it('creates filename-derived ids for visible fragment types', async () => {
+    const res = await apiJson(`/stories/${storyId}/fragments`, {
+      type: 'character',
+      name: 'Io Dren',
+      description: 'Station archivist',
+      content: 'Keeps the night archive in order.',
+    })
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.id).toBe('ch-io-dren')
+    expect(data.name).toBe('Io Dren')
+  })
+
   it('GET /api/stories/:sid/fragments/:fid gets a fragment', async () => {
     const created = await (
       await apiJson(`/stories/${storyId}/fragments`, fragment)

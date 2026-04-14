@@ -753,11 +753,11 @@ export async function buildContext(
 const ANTHROPIC_CACHE_CONTROL = { anthropic: { cacheControl: { type: 'ephemeral' } } }
 
 /**
- * Regex for fragment tag references: <@ch-bafego> or <@ch-bafego:short>
- * Matches valid fragment IDs (2-4 char prefix, hyphen, 6 lowercase alpha chars)
+ * Regex for fragment tag references: <@ch-io-dren> or <@ch-io-dren:short>
+ * Matches valid fragment IDs with a type prefix and one or more slug segments.
  * with an optional :short modifier.
  */
-const FRAGMENT_TAG_RE = /<@([a-z]{2,4}-[a-z]{6})(?::(short))?>/g
+const FRAGMENT_TAG_RE = /<@([a-z]{2,4}-[a-z0-9]+(?:-[a-z0-9]+)*)(?::(short))?>/g
 
 export interface ExpandFragmentTagsOptions {
   /** Maximum recursion depth for expanding tags within expanded content. Default 0 (no recursion). */
