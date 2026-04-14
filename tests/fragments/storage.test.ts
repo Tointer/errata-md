@@ -274,13 +274,15 @@ describe('Fragment CRUD', () => {
     expect(rawMarkdown).not.toContain('name:')
     expect(rawMarkdown).not.toContain('description:')
 
-    const internalPath = join(dataDir, 'stories', storyId, '.errata', 'prose-fragments.json')
+    const internalPath = join(dataDir, 'stories', storyId, '.errata', 'fragment-internals.json')
     expect(existsSync(internalPath)).toBe(true)
 
     const internalRaw = await readFile(internalPath, 'utf-8')
     expect(internalRaw).toContain('analysisId')
     expect(internalRaw).toContain('annotations')
     expect(internalRaw).toContain('Hidden prose title')
+    expect(internalRaw).toContain('"createdAt"')
+    expect(internalRaw).toContain('"updatedAt"')
     expect(internalRaw).not.toContain('generatedFrom')
 
     const retrieved = await getFragment(dataDir, storyId, fragment.id)
@@ -291,6 +293,35 @@ describe('Fragment CRUD', () => {
     expect((retrieved!.meta._librarian as { summary: string; analysisId: string }).summary).toBe('Mirea is forced toward the tunnel exit.')
     expect((retrieved!.meta._librarian as { summary: string; analysisId: string }).analysisId).toBe('la-1234')
     expect(retrieved!.meta.locked).toBe(true)
+  })
+
+  it('stores visible fragment timestamps in shared internal metadata instead of markdown', async () => {
+    const fragment = makeFragment({
+      id: 'gl-scene-discipline',
+      type: 'guideline',
+      name: 'Scene Discipline',
+      description: 'Scene pacing rules',
+      content: 'Keep scenes tight.',
+      sticky: true,
+      placement: 'system',
+    })
+
+    await createFragment(dataDir, storyId, fragment)
+
+    const markdownPath = join(dataDir, 'stories', storyId, 'Guidelines', 'Scene Discipline.md')
+    const rawMarkdown = await readFile(markdownPath, 'utf-8')
+    expect(rawMarkdown).not.toContain('createdAt:')
+    expect(rawMarkdown).not.toContain('updatedAt:')
+
+    const internalPath = join(dataDir, 'stories', storyId, '.errata', 'fragment-internals.json')
+    const internalRaw = await readFile(internalPath, 'utf-8')
+    expect(internalRaw).toContain('"gl-scene-discipline"')
+    expect(internalRaw).toContain('"createdAt": "2026-01-01T00:00:00.000Z"')
+    expect(internalRaw).toContain('"updatedAt": "2026-01-01T00:00:00.000Z"')
+
+    const retrieved = await getFragment(dataDir, storyId, fragment.id)
+    expect(retrieved?.createdAt).toBe('2026-01-01T00:00:00.000Z')
+    expect(retrieved?.updatedAt).toBe('2026-01-01T00:00:00.000Z')
   })
 
   it('lists fragments directly from markdown storage', async () => {

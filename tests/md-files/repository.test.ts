@@ -147,6 +147,13 @@ describe('md-files repository sync', () => {
       expect(raw).not.toContain('\nid:')
       expect(raw).not.toContain('\nname:')
       expect(raw).not.toContain('\ntype:')
+      expect(raw).not.toContain('\ncreatedAt:')
+      expect(raw).not.toContain('\nupdatedAt:')
+
+      const internalRaw = await readFile(join(getInternalStoryRoot(tmp.path, story.id), 'fragment-internals.json'), 'utf-8')
+      expect(internalRaw).toContain('"ch-io-dren"')
+      expect(internalRaw).toContain('"createdAt"')
+      expect(internalRaw).toContain('"updatedAt"')
 
       const loaded = await loadMarkdownFragmentById(tmp.path, story.id, 'ch-io-dren')
       expect(loaded?.id).toBe('ch-io-dren')
@@ -183,6 +190,10 @@ describe('md-files repository sync', () => {
       expect(files).toContain('0000-pr-firstaa.md')
       expect(files).toContain('0001-pr-seconda.md')
       expect(files).toContain('0001-pr-variaaa.md')
+
+      const internalRaw = await readFile(join(getInternalStoryRoot(tmp.path, story.id), 'fragment-internals.json'), 'utf-8')
+      expect(internalRaw).toContain('"pr-firstaa"')
+      expect(internalRaw).toContain('"prose"')
     } finally {
       await tmp.cleanup()
     }

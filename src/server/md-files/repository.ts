@@ -22,10 +22,11 @@ import {
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import { proseFragmentFromMarkdown, splitProseInternalMeta } from './prose-metadata'
 import {
-  readProseFragmentIndex,
-  removeProseFragmentInternalRecord,
-  upsertProseFragmentInternalRecord,
-} from './prose-fragment-index'
+  readFragmentInternalIndex,
+  removeFragmentInternalRecord,
+  resolveFragmentTimestamps,
+  upsertFragmentInternalRecord,
+} from './fragment-internals'
 import { serializeStoryMeta, storyMetaFromMarkdown } from './story-meta'
 
 function optionalList<T>(value: T[]): T[] | undefined {
@@ -51,8 +52,6 @@ function serializeFragment(fragment: Fragment): string {
         sticky: fragment.sticky,
         placement: fragment.placement,
         order: fragment.order,
-        createdAt: fragment.createdAt,
-        updatedAt: fragment.updatedAt,
         meta: optionalRecord(fragment.meta),
       },
       fragment.content,
@@ -70,16 +69,19 @@ function serializeFragment(fragment: Fragment): string {
       sticky: fragment.sticky,
       placement: fragment.placement,
       order: fragment.order,
-      createdAt: fragment.createdAt,
-      updatedAt: fragment.updatedAt,
       meta: optionalRecord(fragment.meta),
     },
     fragment.content,
   )
 }
 
-function fragmentFromLegacyMarkdown(attributes: Record<string, unknown>, body: string): Fragment | null {
+function fragmentFromLegacyMarkdown(
+  attributes: Record<string, unknown>,
+  body: string,
+  internalRecord?: { createdAt: string; updatedAt: string },
+): Fragment | null {
   if (typeof attributes.id !== 'string' || typeof attributes.type !== 'string') return null
+  const timestamps = resolveFragmentTimestamps(attributes, internalRecord)
   return {
     id: attributes.id,
     type: attributes.type,
@@ -90,8 +92,8 @@ function fragmentFromLegacyMarkdown(attributes: Record<string, unknown>, body: s
     refs: Array.isArray(attributes.refs) ? attributes.refs.filter((value): value is string => typeof value === 'string') : [],
     sticky: Boolean(attributes.sticky),
     placement: attributes.placement === 'system' ? 'system' : 'user',
-    createdAt: typeof attributes.createdAt === 'string' ? attributes.createdAt : new Date().toISOString(),
-    updatedAt: typeof attributes.updatedAt === 'string' ? attributes.updatedAt : new Date().toISOString(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
     order: typeof attributes.order === 'number' ? attributes.order : 0,
     meta: typeof attributes.meta === 'object' && attributes.meta !== null ? attributes.meta as Record<string, unknown> : {},
     version: 1,
@@ -104,8 +106,10 @@ function visibleFragmentFromMarkdown(
   fileName: string,
   attributes: Record<string, unknown>,
   body: string,
+  internalRecord?: { createdAt: string; updatedAt: string },
 ): Fragment {
   const baseName = fileName.replace(/\.md$/i, '')
+  const timestamps = resolveFragmentTimestamps(attributes, internalRecord)
   return {
     id: getFilenameDerivedFragmentId(type, fileName),
     type,
@@ -116,8 +120,8 @@ function visibleFragmentFromMarkdown(
     refs: Array.isArray(attributes.refs) ? attributes.refs.filter((value): value is string => typeof value === 'string') : [],
     sticky: Boolean(attributes.sticky),
     placement: attributes.placement === 'system' ? 'system' : 'user',
-    createdAt: typeof attributes.createdAt === 'string' ? attributes.createdAt : new Date().toISOString(),
-    updatedAt: typeof attributes.updatedAt === 'string' ? attributes.updatedAt : new Date().toISOString(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
     order: typeof attributes.order === 'number' ? attributes.order : 0,
     meta: typeof attributes.meta === 'object' && attributes.meta !== null ? attributes.meta as Record<string, unknown> : {},
     version: 1,
@@ -236,10 +240,7 @@ function findProseSectionIndex(chain: ProseChain | null, fragmentId: string): nu
 
 export async function syncFragmentMarkdown(dataDir: string, storyId: string, fragment: Fragment): Promise<void> {
   await ensureMarkdownStoryLayout(dataDir, storyId)
-
-  if (fragment.type === 'prose') {
-    await upsertProseFragmentInternalRecord(dataDir, storyId, fragment)
-  }
+  await upsertFragmentInternalRecord(dataDir, storyId, fragment)
 
   const folderPath = join(getMarkdownStoryRoot(dataDir, storyId), getFragmentFolder(fragment.type))
   const chain = fragment.type === 'prose' || fragment.type === 'marker'
@@ -266,7 +267,7 @@ export async function deleteFragmentMarkdown(dataDir: string, storyId: string, f
       await rm(path, { force: true })
     }
   }
-  await removeProseFragmentInternalRecord(dataDir, storyId, fragmentId)
+  await removeFragmentInternalRecord(dataDir, storyId, fragmentId)
 }
 
 export async function loadMarkdownFragmentById(dataDir: string, storyId: string, fragmentId: string): Promise<Fragment | null> {
@@ -277,19 +278,27 @@ export async function loadMarkdownFragmentById(dataDir: string, storyId: string,
 
   const raw = await readFile(path, 'utf-8')
   const parsed = parseFrontmatter(raw)
+  const internalIndex = await readFragmentInternalIndex(dataDir, storyId)
+  const internalRecord = internalIndex[fragmentId]
   const proseDir = join(getMarkdownStoryRoot(dataDir, storyId), 'Prose')
 
   if (path.startsWith(proseDir)) {
-    const proseIndex = await readProseFragmentIndex(dataDir, storyId)
-    return proseFragmentFromMarkdown(fragmentId, parsed.attributes, parsed.body, proseIndex[fragmentId], fragmentFromLegacyMarkdown)
+    return proseFragmentFromMarkdown(
+      fragmentId,
+      parsed.attributes,
+      parsed.body,
+      internalRecord?.prose,
+      resolveFragmentTimestamps(parsed.attributes, internalRecord),
+      (attributes, body) => fragmentFromLegacyMarkdown(attributes, body, internalRecord),
+    )
   }
 
   const visibleType = match ? getTypeForVisibleFolder(match.folder) : null
   if (visibleType && isVisibleFilenameDerivedType(visibleType) && match) {
-    return visibleFragmentFromMarkdown(visibleType, match.entry, parsed.attributes, parsed.body)
+    return visibleFragmentFromMarkdown(visibleType, match.entry, parsed.attributes, parsed.body, internalRecord)
   }
 
-  return fragmentFromLegacyMarkdown(parsed.attributes, parsed.body)
+  return fragmentFromLegacyMarkdown(parsed.attributes, parsed.body, internalRecord)
 }
 
 export async function listMarkdownFragments(
@@ -302,7 +311,7 @@ export async function listMarkdownFragments(
 
   const folders = type ? [getFragmentFolder(type)] : [...MARKDOWN_FRAGMENT_DIRS]
   const fragments: Fragment[] = []
-  const proseIndex = folders.includes(getFragmentFolder('prose')) ? await readProseFragmentIndex(dataDir, storyId) : {}
+  const internalIndex = await readFragmentInternalIndex(dataDir, storyId)
 
   for (const folder of folders) {
     const folderPath = join(root, folder)
@@ -314,11 +323,22 @@ export async function listMarkdownFragments(
       const raw = await readFile(record.path, 'utf-8')
       const parsed = parseFrontmatter(raw)
       const proseId = getProseFragmentIdFromFileName(entry)
+      const visibleId = visibleType && isVisibleFilenameDerivedType(visibleType)
+        ? getFilenameDerivedFragmentId(visibleType, entry)
+        : undefined
+      const legacyId = typeof parsed.attributes.id === 'string' ? parsed.attributes.id : undefined
       const fragment = folder === 'Prose'
-        ? proseFragmentFromMarkdown(proseId, parsed.attributes, parsed.body, proseIndex[proseId], fragmentFromLegacyMarkdown)
+        ? proseFragmentFromMarkdown(
+            proseId,
+            parsed.attributes,
+            parsed.body,
+            internalIndex[proseId]?.prose,
+            resolveFragmentTimestamps(parsed.attributes, internalIndex[proseId]),
+            (attributes, body) => fragmentFromLegacyMarkdown(attributes, body, internalIndex[proseId]),
+          )
         : visibleType && isVisibleFilenameDerivedType(visibleType)
-          ? visibleFragmentFromMarkdown(visibleType, entry, parsed.attributes, parsed.body)
-        : fragmentFromLegacyMarkdown(parsed.attributes, parsed.body)
+          ? visibleFragmentFromMarkdown(visibleType, entry, parsed.attributes, parsed.body, internalIndex[visibleId ?? ''])
+          : fragmentFromLegacyMarkdown(parsed.attributes, parsed.body, legacyId ? internalIndex[legacyId] : undefined)
 
       if (!fragment) continue
       if (type && fragment.type !== type) continue
@@ -389,7 +409,7 @@ export async function listArchivedMarkdownFragments(
 
   const folders = type ? [getFragmentFolder(type)] : [...MARKDOWN_FRAGMENT_DIRS]
   const fragments: Fragment[] = []
-  const proseIndex = folders.includes(getFragmentFolder('prose')) ? await readProseFragmentIndex(dataDir, storyId) : {}
+  const internalIndex = await readFragmentInternalIndex(dataDir, storyId)
 
   for (const folder of folders) {
     const folderPath = join(root, folder)
@@ -400,11 +420,22 @@ export async function listArchivedMarkdownFragments(
       const raw = await readFile(record.path, 'utf-8')
       const parsed = parseFrontmatter(raw)
       const proseId = getProseFragmentIdFromFileName(record.entry)
+      const visibleId = visibleType && isVisibleFilenameDerivedType(visibleType)
+        ? getFilenameDerivedFragmentId(visibleType, record.entry)
+        : undefined
+      const legacyId = typeof parsed.attributes.id === 'string' ? parsed.attributes.id : undefined
       const fragment = folder === 'Prose'
-        ? proseFragmentFromMarkdown(proseId, parsed.attributes, parsed.body, proseIndex[proseId], fragmentFromLegacyMarkdown)
+        ? proseFragmentFromMarkdown(
+            proseId,
+            parsed.attributes,
+            parsed.body,
+            internalIndex[proseId]?.prose,
+            resolveFragmentTimestamps(parsed.attributes, internalIndex[proseId]),
+            (attributes, body) => fragmentFromLegacyMarkdown(attributes, body, internalIndex[proseId]),
+          )
         : visibleType && isVisibleFilenameDerivedType(visibleType)
-          ? visibleFragmentFromMarkdown(visibleType, record.entry, parsed.attributes, parsed.body)
-          : fragmentFromLegacyMarkdown(parsed.attributes, parsed.body)
+          ? visibleFragmentFromMarkdown(visibleType, record.entry, parsed.attributes, parsed.body, internalIndex[visibleId ?? ''])
+          : fragmentFromLegacyMarkdown(parsed.attributes, parsed.body, legacyId ? internalIndex[legacyId] : undefined)
 
       if (!fragment) continue
       if (type && fragment.type !== type) continue

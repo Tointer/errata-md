@@ -5,16 +5,13 @@ export interface ProseMarkdownMeta {
   summary?: string
 }
 
-export interface ProseFragmentInternalRecord {
-  id: string
+export interface ProseFragmentInternalFields {
   name: string
   description: string
   tags: string[]
   refs: string[]
   sticky: boolean
   placement: 'system' | 'user'
-  createdAt: string
-  updatedAt: string
   order: number
   meta: Record<string, unknown>
 }
@@ -96,18 +93,15 @@ export function mergeVisibleProseMeta(meta: Record<string, unknown>, markdownMet
   return merged
 }
 
-export function buildProseInternalRecord(fragment: Fragment): ProseFragmentInternalRecord {
+export function buildProseInternalFields(fragment: Fragment): ProseFragmentInternalFields {
   const { internalMeta } = splitProseInternalMeta(fragment.meta)
   return {
-    id: fragment.id,
     name: fragment.name,
     description: fragment.description,
     tags: fragment.tags,
     refs: fragment.refs,
     sticky: fragment.sticky,
     placement: fragment.placement,
-    createdAt: fragment.createdAt,
-    updatedAt: fragment.updatedAt,
     order: fragment.order,
     meta: internalMeta,
   }
@@ -117,26 +111,27 @@ export function proseFragmentFromMarkdown(
   fragmentId: string,
   attributes: Record<string, unknown>,
   body: string,
-  internalRecord: ProseFragmentInternalRecord | undefined,
+  internalFields: ProseFragmentInternalFields | undefined,
+  timestamps: { createdAt: string; updatedAt: string },
   fallback: (attributes: Record<string, unknown>, body: string) => Fragment | null,
 ): Fragment {
   const markdownMeta = extractProseMarkdownMeta(attributes)
 
-  if (internalRecord) {
+  if (internalFields) {
     return {
-      id: internalRecord.id,
+      id: fragmentId,
       type: 'prose',
-      name: internalRecord.name,
-      description: internalRecord.description,
+      name: internalFields.name,
+      description: internalFields.description,
       content: body,
-      tags: internalRecord.tags,
-      refs: internalRecord.refs,
-      sticky: internalRecord.sticky,
-      placement: internalRecord.placement,
-      createdAt: internalRecord.createdAt,
-      updatedAt: internalRecord.updatedAt,
-      order: internalRecord.order,
-      meta: mergeVisibleProseMeta(internalRecord.meta, markdownMeta),
+      tags: internalFields.tags,
+      refs: internalFields.refs,
+      sticky: internalFields.sticky,
+      placement: internalFields.placement,
+      createdAt: timestamps.createdAt,
+      updatedAt: timestamps.updatedAt,
+      order: internalFields.order,
+      meta: mergeVisibleProseMeta(internalFields.meta, markdownMeta),
       version: 1,
       versions: [],
     }
@@ -163,8 +158,8 @@ export function proseFragmentFromMarkdown(
     refs: [],
     sticky: false,
     placement: 'user',
-    createdAt: now,
-    updatedAt: now,
+    createdAt: timestamps.createdAt ?? now,
+    updatedAt: timestamps.updatedAt ?? now,
     order: 0,
     meta: mergeVisibleProseMeta({}, markdownMeta),
     version: 1,
