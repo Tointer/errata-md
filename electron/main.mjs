@@ -447,6 +447,16 @@ function waitForProcessExit(child) {
   })
 }
 
+function forwardBackendStream(stream, target) {
+  if (!stream) {
+    return
+  }
+
+  stream.on('data', (chunk) => {
+    target.write(chunk)
+  })
+}
+
 async function terminateBackendProcess(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) {
     return
@@ -487,8 +497,12 @@ function spawnBackend() {
   const backend = spawn(spawnConfig.command, spawnConfig.args, {
     cwd: spawnConfig.cwd,
     env: spawnConfig.env,
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   })
+
+  forwardBackendStream(backend.stdout, process.stdout)
+  forwardBackendStream(backend.stderr, process.stderr)
 
   backend.once('exit', (code, signal) => {
     backendProcess = null
