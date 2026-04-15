@@ -1,32 +1,45 @@
 import { app, BrowserWindow } from 'electron'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const appRoot = join(__dirname, '..')
 
-const rendererUrl = process.env.ELECTRON_RENDERER_URL ?? 'http://127.0.0.1:3000'
+const rendererUrl = process.env.ELECTRON_RENDERER_URL ?? null
+const isDev = Boolean(rendererUrl)
 const backendOrigin = process.env.ERRATA_API_ORIGIN ?? 'http://127.0.0.1:7739'
 const backendUrl = new URL(backendOrigin)
 const preloadPath = join(__dirname, 'preload.mjs')
 
 let backendProcess = null
+let bundledBackendStarted = false
+
+function configureRuntimePaths() {
+  if (process.env.DATA_DIR?.trim()) {
+    app.setPath('sessionData', join(app.getPath('userData'), 'session'))
+    return
+  }
+
+  process.env.DATA_DIR = join(app.getPath('userData'), 'data')
+  app.setPath('sessionData', join(app.getPath('userData'), 'session'))
+}
 
 function spawnBackend() {
   if (backendProcess) {
     return backendProcess
   }
 
-  const nodeBinary = process.env.ERRATA_NODE_BINARY || 'node'
   const backendEnv = {
     ...process.env,
+    ERRATA_APP_ROOT: appRoot,
     HOST: backendUrl.hostname,
     PORT: backendUrl.port || '7739',
     CORS_ORIGINS: rendererUrl,
   }
 
-  const backend = spawn(nodeBinary, ['--import', 'tsx', 'src/server/standalone.ts'], {
-    cwd: join(__dirname, '..'),
+  const backend = spawn(process.env.ERRATA_NODE_BINARY || 'node', ['--import', 'tsx', 'src/server/standalone.ts'], {
+    cwd: appRoot,
     env: backendEnv,
     stdio: 'inherit',
   })
@@ -42,6 +55,21 @@ function spawnBackend() {
 
   backendProcess = backend
   return backend
+}
+
+async function startBundledBackend() {
+  if (bundledBackendStarted) {
+    return
+  }
+
+  const packagedAppRoot = app.getAppPath()
+  process.env.ERRATA_APP_ROOT = process.resourcesPath
+  process.env.HOST = backendUrl.hostname
+  process.env.PORT = backendUrl.port || '7739'
+
+  const serverEntry = join(packagedAppRoot, '.output', 'server', 'index.mjs')
+  await import(pathToFileURL(serverEntry).href)
+  bundledBackendStarted = true
 }
 
 async function waitForUrl(url, label) {
@@ -64,7 +92,14 @@ async function waitForUrl(url, label) {
 }
 
 async function createMainWindow() {
-  spawnBackend()
+  configureRuntimePaths()
+
+  if (isDev) {
+    spawnBackend()
+  } else {
+    await startBundledBackend()
+  }
+
   await waitForUrl(`${backendOrigin}/api/health`, 'Backend')
 
   const window = new BrowserWindow({
@@ -85,7 +120,7 @@ async function createMainWindow() {
     window.show()
   })
 
-  await window.loadURL(rendererUrl)
+  await window.loadURL(isDev ? rendererUrl : backendOrigin)
 }
 
 function stopBackend() {

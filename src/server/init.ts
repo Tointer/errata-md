@@ -3,14 +3,26 @@ import { loadAllPlugins } from './plugins/loader'
 import { clearRuntimePluginUi } from './plugins/runtime-ui'
 import { createApp } from './api'
 import type { WritingPlugin } from './plugins/types'
+import colorPickerPlugin from '../../plugins/color-picker/entry.server'
+import dicerollPlugin from '../../plugins/diceroll/entry.server'
+import keybindsPlugin from '../../plugins/keybinds/entry.server'
+import namesPlugin from '../../plugins/names/entry.server'
+import { existsSync } from 'node:fs'
 import { mkdir, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 
 type PluginModule = { default: WritingPlugin }
 
 type ImportMetaWithGlob = ImportMeta & {
   glob?: <T>(pattern: string, options: { eager: true }) => Record<string, T>
+}
+
+const fallbackBundledPluginModules: Record<string, PluginModule> = {
+  '../../plugins/color-picker/entry.server.ts': { default: colorPickerPlugin },
+  '../../plugins/diceroll/entry.server.ts': { default: dicerollPlugin },
+  '../../plugins/keybinds/entry.server.ts': { default: keybindsPlugin },
+  '../../plugins/names/entry.server.ts': { default: namesPlugin },
 }
 
 async function ensureStartupDirectories(dataDir: string, pluginDir?: string) {
@@ -21,6 +33,10 @@ async function ensureStartupDirectories(dataDir: string, pluginDir?: string) {
   if (pluginDir) {
     await mkdir(pluginDir, { recursive: true })
   }
+}
+
+function resolveAppRoot(): string {
+  return process.env.ERRATA_APP_ROOT?.trim() || process.cwd()
 }
 
 // Discover plugins at build time using Vite's import.meta.glob.
@@ -37,7 +53,11 @@ function getBundledPluginModules(): Record<string, PluginModule> | null {
 const pluginModules = getBundledPluginModules()
 
 async function loadBundledPluginsFromFilesystem(): Promise<Array<[string, PluginModule]>> {
-  const pluginsDir = fileURLToPath(new URL('../../plugins', import.meta.url))
+  const pluginsDir = join(resolveAppRoot(), 'plugins')
+  if (!existsSync(pluginsDir)) {
+    return []
+  }
+
   const entries = await readdir(pluginsDir, { withFileTypes: true })
   const modules: Array<[string, PluginModule]> = []
 
@@ -62,6 +82,10 @@ async function loadBundledPluginsFromFilesystem(): Promise<Array<[string, Plugin
 async function getBundledPluginEntries(): Promise<Array<[string, PluginModule]>> {
   if (pluginModules) {
     return Object.entries(pluginModules)
+  }
+
+  if (Object.keys(fallbackBundledPluginModules).length > 0) {
+    return Object.entries(fallbackBundledPluginModules)
   }
 
   return loadBundledPluginsFromFilesystem()

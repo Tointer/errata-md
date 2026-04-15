@@ -22,3 +22,6 @@ docs/site/
 .claude
 data_
 junit.xml
+
+# Electron packaging outputs
+release/

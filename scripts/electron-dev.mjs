@@ -1,4 +1,9 @@
 import { spawn } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const appRoot = resolve(scriptDir, '..')
 
 const rendererPort = process.env.ELECTRON_RENDERER_PORT ?? '3000'
 const rendererUrl = `http://127.0.0.1:${rendererPort}`
@@ -94,6 +99,7 @@ await waitForUrl(rendererUrl, 'Renderer')
 const electron = spawnProcess('npx', ['electron', 'electron/main.mjs'], {
   ELECTRON_RENDERER_URL: rendererUrl,
   ERRATA_API_ORIGIN: apiOrigin,
+  ERRATA_APP_ROOT: appRoot,
   ERRATA_NODE_BINARY: process.execPath,
 })
 

@@ -3,6 +3,7 @@
   "version": "1.7.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.mjs",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -13,6 +14,8 @@
     "dev:share": "node scripts/proxy-with-qr.mjs",
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:start": "electron electron/main.mjs",
+    "desktop:build": "npm run build && electron-builder --dir",
+    "desktop:dist": "npm run build && electron-builder",
     "build": "vite build",
     "new:plugin": "node scripts/new-plugin.mjs",
     "build:binary": "node -e \"throw new Error('Standalone binary builds are disabled during the Node migration.')\"",
@@ -71,6 +74,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^41.2.0",
+    "electron-builder": "^26.0.12",
     "jsdom": "^27.0.0",
     "qrcode-terminal": "^0.12.0",
     "shadcn": "^3.8.4",
@@ -79,5 +83,40 @@
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vitest": "^3.0.5"
+  },
+  "build": {
+    "appId": "com.errata.desktop",
+    "productName": "Errata",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      ".output/**/*",
+      "electron/**/*",
+      "plugins/**/*",
+      "packages/errata-plugin-sdk/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "extraMetadata": {
+      "main": "electron/main.mjs"
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
   }
 }
