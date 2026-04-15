@@ -14,6 +14,7 @@ import {
 } from '@/lib/fragment-clipboard'
 import { SingleFragmentPreview, BundlePreview } from '@/components/fragments/FragmentImportDialog'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Trash2, Sparkles, BookOpen, Users, Scroll, Globe, Upload, ChevronRight, FileJson, AlertCircle, Clipboard, Camera, X, ImagePlus } from 'lucide-react'
+import { Plus, Trash2, Sparkles, BookOpen, Users, Scroll, Globe, Upload, ChevronRight, FileJson, AlertCircle, Clipboard, Camera, X, ImagePlus, Check, ChevronsUpDown, FolderPlus } from 'lucide-react'
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import { ErrataLogo } from '@/components/ErrataLogo'
 import { ImportDialog } from '@/components/ImportDialog'
@@ -33,6 +34,7 @@ import {
   parseCardJson,
 } from '@/lib/importers/tavern-card'
 import { GeneratedCover } from '@/components/GeneratedCover'
+import { chooseVault, getDesktopRuntimeInfo, isDesktopApp } from '@/lib/desktop'
 import { useTheme } from '@/lib/theme'
 
 export const Route = createFileRoute('/')({ component: StoryListPage })
@@ -47,6 +49,10 @@ function StoryListPage() {
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [fileDragOver, setFileDragOver] = useState(false)
   const dragCounter = useRef(0)
+  const [desktopInfo, setDesktopInfo] = useState<Awaited<ReturnType<typeof getDesktopRuntimeInfo>>>(null)
+  const [vaultChangePending, setVaultChangePending] = useState(false)
+  const [vaultChangeError, setVaultChangeError] = useState<string | null>(null)
+  const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
 
   // Options section state
   const [showOptions, setShowOptions] = useState(false)
@@ -55,6 +61,61 @@ function StoryListPage() {
   const [parseError, setParseError] = useState<string | null>(null)
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
   const [dragOver, setDragOver] = useState(false)
+  const desktopAvailable = desktopInfo !== null || isDesktopApp()
+
+  const refreshDesktopInfo = useCallback(async () => {
+    if (!isDesktopApp()) {
+      return
+    }
+
+    const info = await getDesktopRuntimeInfo()
+    setDesktopInfo(info)
+  }, [])
+
+  useEffect(() => {
+    if (!isDesktopApp()) {
+      return
+    }
+
+    let cancelled = false
+
+    refreshDesktopInfo()
+      .catch((error) => {
+        console.error('[desktop] Failed to load vault info', error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [refreshDesktopInfo])
+
+  const handleChangeVault = useCallback(async (vaultPath?: string) => {
+    setVaultChangePending(true)
+    setVaultChangeError(null)
+
+    try {
+      const result = await chooseVault(vaultPath)
+      if (!result) {
+        setVaultChangeError('Desktop vault picker is unavailable in this window.')
+        return
+      }
+
+      if (result.canceled || result.switched) {
+        if (result.canceled) {
+          setVaultMenuOpen(false)
+        }
+        return
+      }
+
+      await refreshDesktopInfo()
+      setVaultMenuOpen(false)
+    } catch (error) {
+      console.error('[desktop] Failed to change vault', error)
+      setVaultChangeError(error instanceof Error ? error.message : 'Failed to open the vault picker.')
+    } finally {
+      setVaultChangePending(false)
+    }
+  }, [refreshDesktopInfo])
 
   const { data: stories, isLoading } = useQuery({
     queryKey: ['stories'],
@@ -219,6 +280,83 @@ function StoryListPage() {
   const [manualWizard, setManualWizard] = useState(false)
   const showOnboarding = manualWizard || (!configLoading && globalConfig && globalConfig.providers.length === 0)
 
+  const renderVaultSelector = () => {
+    if (!desktopAvailable) {
+      return null
+    }
+
+    const recentVaults = desktopInfo?.recentVaults ?? []
+    const activeVaultName = desktopInfo?.vaultName ?? 'Choose vault'
+    const activeVaultPath = desktopInfo?.vaultPath ?? ''
+
+    return (
+      <Collapsible open={vaultMenuOpen} onOpenChange={setVaultMenuOpen}>
+        <div className="relative">
+          <CollapsibleTrigger asChild>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="min-w-44 justify-between gap-2 rounded-md border border-border/50 bg-background/70 px-3 text-left hover:bg-accent/60"
+              disabled={vaultChangePending}
+              data-component-id="story-vault-selector-button"
+            >
+              <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                <span className="shrink-0 text-xs text-muted-foreground">Vault</span>
+                <span className="truncate text-sm font-medium text-foreground" title={activeVaultPath}>{vaultChangePending ? 'Switching…' : activeVaultName}</span>
+              </span>
+              <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="absolute right-0 top-full z-30 mt-2 w-80 overflow-hidden rounded-xl border border-border/60 bg-popover/95 shadow-xl shadow-black/10 backdrop-blur-md">
+            <div className="border-b border-border/50 px-3 py-2">
+              <p className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">Remembered vaults</p>
+            </div>
+            <div className="max-h-80 overflow-y-auto p-2">
+              {recentVaults.length > 0 ? (
+                <div className="space-y-1">
+                  {recentVaults.map((vault) => (
+                    <button
+                      key={vault.path}
+                      type="button"
+                      onClick={() => void handleChangeVault(vault.path)}
+                      disabled={vaultChangePending}
+                      className="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-60"
+                      data-component-id="story-vault-selector-item"
+                    >
+                      <span className={`mt-0.5 flex size-4 items-center justify-center rounded-full border ${vault.isActive ? 'border-foreground bg-foreground text-background' : 'border-border text-transparent'}`}>
+                        <Check className="size-3" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">{vault.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground" title={vault.path}>{vault.path}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-3 py-2 text-sm text-muted-foreground">No remembered vaults yet.</p>
+              )}
+            </div>
+            <div className="border-t border-border/50 p-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start gap-2"
+                onClick={() => void handleChangeVault()}
+                disabled={vaultChangePending}
+                data-component-id="story-vault-selector-add-new"
+              >
+                <FolderPlus className="size-3.5" />
+                Add new vault
+              </Button>
+            </div>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
+    )
+  }
+
   // Global drag-and-drop for story archives (ZIP) and character card files (JSON + PNG)
   useEffect(() => {
     const hasFiles = (e: DragEvent) => {
@@ -374,12 +512,27 @@ function StoryListPage() {
 
   if (showOnboarding) {
     return (
-      <OnboardingWizard
-        onComplete={() => {
-          setManualWizard(false)
-          queryClient.invalidateQueries({ queryKey: ['global-config'] })
-        }}
-      />
+      <div className="min-h-screen bg-background" data-component-id="stories-page">
+        <header className="border-b border-border/50" data-component-id="stories-header">
+          <div className="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-8 py-4 sm:py-6">
+            <div className="min-w-0">
+              <h1><ErrataLogo variant="full" size={28} /></h1>
+              {vaultChangeError && (
+                <p className="mt-1 text-xs text-destructive">{vaultChangeError}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {renderVaultSelector()}
+            </div>
+          </div>
+        </header>
+        <OnboardingWizard
+          onComplete={() => {
+            setManualWizard(false)
+            queryClient.invalidateQueries({ queryKey: ['global-config'] })
+          }}
+        />
+      </div>
     )
   }
 
@@ -388,10 +541,14 @@ function StoryListPage() {
       {/* Header */}
       <header className="border-b border-border/50" data-component-id="stories-header">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-8 py-4 sm:py-6">
-          <div>
+          <div className="min-w-0">
             <h1><ErrataLogo variant="full" size={28} /></h1>
+            {vaultChangeError && (
+              <p className="mt-1 text-xs text-destructive">{vaultChangeError}</p>
+            )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
+            {renderVaultSelector()}
             <Button
               size="sm"
               variant="ghost"

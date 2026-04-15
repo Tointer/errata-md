@@ -21,6 +21,7 @@ import { tokenUsageRoutes } from './routes/token-usage'
 import { folderRoutes } from './routes/folders'
 
 const DATA_DIR = process.env.DATA_DIR ?? './data'
+const GLOBAL_DATA_DIR = process.env.GLOBAL_DATA_DIR ?? DATA_DIR
 
 function contentTypeForPath(path: string): string {
   const ext = extname(path).toLowerCase()
@@ -41,7 +42,7 @@ function contentTypeForPath(path: string): string {
   }
 }
 
-export function createApp(dataDir: string = DATA_DIR) {
+export function createApp(dataDir: string = DATA_DIR, globalDataDir: string = GLOBAL_DATA_DIR) {
   const app = new Elysia({ prefix: '/api' })
     .use(openapi({
       documentation: {
@@ -128,13 +129,13 @@ export function createApp(dataDir: string = DATA_DIR) {
     .use(characterChatRoutes(dataDir))
     .use(generationRoutes(dataDir))
     .use(proseChainRoutes(dataDir))
-    .use(configRoutes(dataDir))
+    .use(configRoutes(globalDataDir))
     .use(agentBlockRoutes(dataDir))
     .use(tokenUsageRoutes(dataDir))
     .use(folderRoutes(dataDir))
 
   // Load instruction overrides after agents are registered (route imports trigger agent registration)
-  instructionRegistry.loadOverridesSync(dataDir)
+  instructionRegistry.loadOverridesSync(globalDataDir)
 
   // Mount plugin routes
   for (const plugin of pluginRegistry.listAll()) {

@@ -25,10 +25,12 @@ const fallbackBundledPluginModules: Record<string, PluginModule> = {
   '../../plugins/names/entry.server.ts': { default: namesPlugin },
 }
 
-async function ensureStartupDirectories(dataDir: string, pluginDir?: string) {
+async function ensureStartupDirectories(dataDir: string, globalDataDir: string, pluginDir?: string) {
   await mkdir(dataDir, { recursive: true })
+  await mkdir(join(dataDir, '.errata'), { recursive: true })
   await mkdir(join(dataDir, 'stories'), { recursive: true })
-  await mkdir(join(dataDir, 'instruction-sets'), { recursive: true })
+  await mkdir(globalDataDir, { recursive: true })
+  await mkdir(join(globalDataDir, 'instruction-sets'), { recursive: true })
 
   if (pluginDir) {
     await mkdir(pluginDir, { recursive: true })
@@ -106,6 +108,7 @@ async function registerBundledPlugins(): Promise<void> {
 
 export async function initializeApp() {
   const dataDir = process.env.DATA_DIR ?? './data'
+  const globalDataDir = process.env.GLOBAL_DATA_DIR ?? dataDir
 
   // Clear previous registrations (handles Vite HMR re-evaluation)
   pluginRegistry.clear()
@@ -116,7 +119,7 @@ export async function initializeApp() {
   const externalPluginsDir = process.env.PLUGIN_DIR?.trim()
   const allowExternalOverride = process.env.PLUGIN_EXTERNAL_OVERRIDE === '1'
 
-  await ensureStartupDirectories(dataDir, externalPluginsDir)
+  await ensureStartupDirectories(dataDir, globalDataDir, externalPluginsDir)
 
   if (externalPluginsDir) {
     try {
@@ -162,7 +165,7 @@ export async function initializeApp() {
   )
 
   // Create the app after plugins are loaded, so plugin routes get mounted
-  return createApp(dataDir)
+  return createApp(dataDir, globalDataDir)
 }
 
 let appPromise: Promise<ReturnType<typeof createApp>> | null = null

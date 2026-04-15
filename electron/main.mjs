@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { spawn } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -12,6 +12,10 @@ const isDev = Boolean(rendererUrl)
 const backendOrigin = process.env.ERRATA_API_ORIGIN ?? 'http://127.0.0.1:7739'
 const backendUrl = new URL(backendOrigin)
 const preloadPath = join(__dirname, 'preload.mjs')
+const DESKTOP_STATE_FILE = 'desktop-state.json'
+const VAULT_META_DIR = '.errata'
+const STORIES_DIR_NAME = 'stories'
+const MAX_RECENT_VAULTS = 8
 
 let backendProcess = null
 let bundledBackendStarted = false
@@ -24,16 +28,119 @@ if (!gotSingleInstanceLock) {
   app.quit()
 }
 
+function getGlobalDataDir() {
+  return process.env.GLOBAL_DATA_DIR?.trim() || join(app.getPath('userData'), 'data')
+}
+
+function getDesktopStatePath() {
+  return join(getGlobalDataDir(), DESKTOP_STATE_FILE)
+}
+
+function normalizeVaultPath(vaultPath) {
+  return resolve(vaultPath)
+}
+
+function getVaultName(vaultPath) {
+  const name = basename(vaultPath)
+  return name || vaultPath
+}
+
+function normalizeRecentVaultPaths(recentVaultPaths, activeVaultPath = null) {
+  const normalizedPaths = []
+  const seen = new Set()
+
+  for (const candidate of [activeVaultPath, ...(Array.isArray(recentVaultPaths) ? recentVaultPaths : [])]) {
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+      continue
+    }
+
+    const normalizedPath = normalizeVaultPath(candidate)
+    if (seen.has(normalizedPath)) {
+      continue
+    }
+
+    seen.add(normalizedPath)
+    normalizedPaths.push(normalizedPath)
+
+    if (normalizedPaths.length >= MAX_RECENT_VAULTS) {
+      break
+    }
+  }
+
+  return normalizedPaths
+}
+
+function getVaultSummaries(activeVaultPath, recentVaultPaths) {
+  return normalizeRecentVaultPaths(recentVaultPaths, activeVaultPath).map((vaultPath) => ({
+    path: vaultPath,
+    name: getVaultName(vaultPath),
+    isActive: vaultPath === activeVaultPath,
+  }))
+}
+
+async function readDesktopState() {
+  try {
+    const raw = await readFile(getDesktopStatePath(), 'utf-8')
+    const parsed = JSON.parse(raw)
+    const activeVaultPath = typeof parsed.activeVaultPath === 'string' ? normalizeVaultPath(parsed.activeVaultPath) : null
+    return {
+      activeVaultPath,
+      recentVaultPaths: normalizeRecentVaultPaths(parsed.recentVaultPaths, activeVaultPath),
+    }
+  } catch {
+    return { activeVaultPath: null, recentVaultPaths: [] }
+  }
+}
+
+async function writeDesktopState(state) {
+  const activeVaultPath = typeof state.activeVaultPath === 'string' ? normalizeVaultPath(state.activeVaultPath) : null
+  const recentVaultPaths = normalizeRecentVaultPaths(state.recentVaultPaths, activeVaultPath)
+
+  await mkdir(getGlobalDataDir(), { recursive: true })
+  await writeFile(getDesktopStatePath(), JSON.stringify({ activeVaultPath, recentVaultPaths }, null, 2), 'utf-8')
+}
+
+async function ensureVaultDirectories(vaultPath) {
+  await mkdir(vaultPath, { recursive: true })
+  await mkdir(join(vaultPath, VAULT_META_DIR), { recursive: true })
+  await mkdir(join(vaultPath, STORIES_DIR_NAME), { recursive: true })
+}
+
+async function resolveActiveVaultPath() {
+  const configuredVaultPath = process.env.ERRATA_ACTIVE_VAULT?.trim() || process.env.DATA_DIR?.trim()
+  if (configuredVaultPath) {
+    return normalizeVaultPath(configuredVaultPath)
+  }
+
+  const state = await readDesktopState()
+  if (state.activeVaultPath) {
+    return normalizeVaultPath(state.activeVaultPath)
+  }
+
+  return normalizeVaultPath(getGlobalDataDir())
+}
+
+async function persistActiveVaultPath(vaultPath) {
+  const desktopState = await readDesktopState()
+  const normalizedVaultPath = normalizeVaultPath(vaultPath)
+  await ensureVaultDirectories(normalizedVaultPath)
+  await writeDesktopState({
+    activeVaultPath: normalizedVaultPath,
+    recentVaultPaths: normalizeRecentVaultPaths(desktopState.recentVaultPaths, normalizedVaultPath),
+  })
+  return normalizedVaultPath
+}
+
 function getDataDir() {
-  return process.env.DATA_DIR?.trim() || join(app.getPath('userData'), 'data')
+  return process.env.DATA_DIR?.trim() || getGlobalDataDir()
 }
 
 function getLogsDir() {
-  return join(getDataDir(), 'logs')
+  return join(getGlobalDataDir(), 'logs')
 }
 
 function getConfigPath() {
-  return join(getDataDir(), 'config.json')
+  return join(getGlobalDataDir(), 'config.json')
 }
 
 function getMainWindow() {
@@ -176,19 +283,62 @@ function attachNavigationGuards(window) {
 }
 
 function registerDesktopHandlers() {
-  ipcMain.handle('desktop:get-runtime-info', () => ({
-    platform: process.platform,
-    apiOrigin: backendOrigin,
-    isDev,
-    appVersion: app.getVersion(),
-    dataDir: getDataDir(),
-    logsDir: getLogsDir(),
-    configPath: getConfigPath(),
-  }))
+  ipcMain.handle('desktop:get-runtime-info', async () => {
+    const desktopState = await readDesktopState()
+    const activeVaultPath = getDataDir()
+
+    return {
+      platform: process.platform,
+      apiOrigin: backendOrigin,
+      isDev,
+      appVersion: app.getVersion(),
+      globalDataDir: getGlobalDataDir(),
+      dataDir: activeVaultPath,
+      logsDir: getLogsDir(),
+      configPath: getConfigPath(),
+      vaultPath: activeVaultPath,
+      vaultName: getVaultName(activeVaultPath),
+      recentVaults: getVaultSummaries(activeVaultPath, desktopState.recentVaultPaths),
+    }
+  })
 
   ipcMain.handle('desktop:open-external', async (_event, urlString) => {
     await openExternalUrl(urlString)
     return { ok: true }
+  })
+  ipcMain.handle('desktop:choose-vault', async (event, options = {}) => {
+    const owner = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow() ?? undefined
+    let nextVaultPath = typeof options?.vaultPath === 'string' && options.vaultPath.trim().length > 0
+      ? normalizeVaultPath(options.vaultPath)
+      : null
+
+    if (!nextVaultPath) {
+      const result = await dialog.showOpenDialog(owner, {
+        title: 'Choose your Errata vault',
+        buttonLabel: 'Use this folder',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+
+      if (result.canceled || !result.filePaths[0]) {
+        return { canceled: true, switched: false, vaultPath: null, vaultName: null }
+      }
+
+      nextVaultPath = normalizeVaultPath(result.filePaths[0])
+    }
+
+    if (nextVaultPath === getDataDir()) {
+      return { canceled: false, switched: false, vaultPath: nextVaultPath, vaultName: getVaultName(nextVaultPath) }
+    }
+
+    await persistActiveVaultPath(nextVaultPath)
+
+    setImmediate(() => {
+      app.isQuitting = true
+      app.relaunch()
+      app.quit()
+    })
+
+    return { canceled: false, switched: true, vaultPath: nextVaultPath, vaultName: getVaultName(nextVaultPath) }
   })
   ipcMain.handle('desktop:show-open-dialog', async (event, options) => {
     const owner = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow() ?? undefined
@@ -208,13 +358,14 @@ function registerDesktopHandlers() {
   })
 }
 
-function configureRuntimePaths() {
-  if (process.env.DATA_DIR?.trim()) {
-    app.setPath('sessionData', join(app.getPath('userData'), 'session'))
-    return
-  }
+async function configureRuntimePaths() {
+  const globalDataDir = getGlobalDataDir()
+  const activeVaultPath = await resolveActiveVaultPath()
 
-  process.env.DATA_DIR = join(app.getPath('userData'), 'data')
+  process.env.GLOBAL_DATA_DIR = globalDataDir
+  process.env.DATA_DIR = activeVaultPath
+  await mkdir(globalDataDir, { recursive: true })
+  await ensureVaultDirectories(activeVaultPath)
   app.setPath('sessionData', join(app.getPath('userData'), 'session'))
 }
 
@@ -296,7 +447,7 @@ async function createMainWindow() {
   }
 
   mainWindowPromise = (async () => {
-    configureRuntimePaths()
+    await configureRuntimePaths()
 
     if (isDev) {
       spawnBackend()
@@ -318,6 +469,7 @@ async function createMainWindow() {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: false,
         preload: preloadPath,
       },
     })

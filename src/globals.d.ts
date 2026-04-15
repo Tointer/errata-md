@@ -10,9 +10,26 @@ interface ErrataDesktopRuntimeInfo {
 	apiOrigin: string
 	isDev: boolean
 	appVersion: string
+	globalDataDir: string
 	dataDir: string
 	logsDir: string
 	configPath: string
+	vaultPath: string
+	vaultName: string
+	recentVaults: ErrataDesktopVaultSummary[]
+}
+
+interface ErrataDesktopVaultSummary {
+	path: string
+	name: string
+	isActive: boolean
+}
+
+interface ErrataChooseVaultResult {
+	canceled: boolean
+	switched: boolean
+	vaultPath: string | null
+	vaultName: string | null
 }
 
 interface ErrataDesktopOpenDialogOptions {
@@ -47,6 +64,7 @@ interface ErrataDesktopApi {
 	platform: string
 	apiOrigin: string
 	getRuntimeInfo: () => Promise<ErrataDesktopRuntimeInfo>
+	chooseVault: (options?: { vaultPath?: string }) => Promise<ErrataChooseVaultResult>
 	openExternal: (url: string) => Promise<{ ok: boolean }>
 	showOpenDialog: (options?: ErrataDesktopOpenDialogOptions) => Promise<{ canceled: boolean; filePaths: string[] }>
 	saveFile: (options: ErrataDesktopSaveFileOptions) => Promise<{ canceled: boolean; filePath: string | null }>

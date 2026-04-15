@@ -1,7 +1,9 @@
 export type DesktopRuntimeInfo = ErrataDesktopRuntimeInfo
+export type DesktopVaultSummary = ErrataDesktopVaultSummary
 export type DesktopDialogFilter = ErrataDesktopDialogFilter
 export type DesktopOpenDialogOptions = ErrataDesktopOpenDialogOptions
 export type DesktopSaveFileOptions = ErrataDesktopSaveFileOptions
+export type DesktopChooseVaultResult = ErrataChooseVaultResult
 
 export function getDesktopApi(): ErrataDesktopApi | null {
   if (typeof window === 'undefined') {
@@ -11,8 +13,34 @@ export function getDesktopApi(): ErrataDesktopApi | null {
   return window.errataDesktop ?? null
 }
 
+function hasElectronUserAgent(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  return /\bElectron\//.test(navigator.userAgent)
+}
+
 export function isDesktopApp(): boolean {
-  return getDesktopApi() !== null
+  return getDesktopApi() !== null || hasElectronUserAgent()
+}
+
+export async function chooseVault(vaultPath?: string): Promise<DesktopChooseVaultResult | null> {
+  const desktop = getDesktopApi()
+  if (!desktop) {
+    return null
+  }
+
+  return desktop.chooseVault(vaultPath ? { vaultPath } : undefined)
+}
+
+export async function getDesktopRuntimeInfo(): Promise<DesktopRuntimeInfo | null> {
+  const desktop = getDesktopApi()
+  if (!desktop) {
+    return null
+  }
+
+  return desktop.getRuntimeInfo()
 }
 
 function browserDownload(blob: Blob, filename: string): void {
