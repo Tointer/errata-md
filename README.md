@@ -1,4 +1,4 @@
-# Errata
+# errata-md
 
 This repository is a fork of the original [Errata](https://github.com/nokusukun/errata). The goal of this fork is not to redesign the core writing model, but to push Errata toward a filesystem-first workflow where story data is readable, movable, and configurable from markdown files.
 
