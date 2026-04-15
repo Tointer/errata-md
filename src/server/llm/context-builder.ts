@@ -2,7 +2,7 @@ import { getStory, listFragments, getFragment } from '../fragments/storage'
 import { registry } from '../fragments/registry'
 import { instructionRegistry } from '../instructions'
 import { createLogger } from '../logging'
-import { getActiveProseIds, findSectionIndex, getFullProseChain } from '../fragments/prose-chain'
+import { getActiveProseIds, findSectionIndex, getProseChain } from '../fragments/prose-chain'
 import { getAnalysis, getLatestAnalysisIdsByFragment } from '../librarian/storage'
 import type { Fragment, StoryMeta } from '../fragments/schema'
 import type { ModelMessage } from 'ai'
@@ -277,7 +277,7 @@ export async function buildContextState(
 
   let chapterSummaries: Array<{ markerId: string; name: string; summary: string }> = []
   if (story.settings.enableHierarchicalSummary && activeProseIds.length > 0 && recentProse.length > 0) {
-    const chain = await getFullProseChain(dataDir, storyId)
+    const chain = await getProseChain(dataDir, storyId)
     if (chain) {
       const sectionByFragmentId = new Map(activeProseIds.map((id, idx) => [id, idx]))
       const recentSectionIndexes = recentProse
@@ -670,30 +670,19 @@ export function createDefaultBlocks(state: ContextBuildState, opts: AssembleOpti
 }
 
 /**
- * Slugifies a block name for use in markers: lowercase, non-alphanumeric → dashes, collapse.
- */
-function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-}
-
-/**
- * Renders a single block: prepends the [@block=...] marker to its content.
- * When the block has a name different from its id, emits [@block=slug src=id].
- * Otherwise emits [@block=id].
- */
-function renderBlock(block: ContextBlock): string {
-  if (block.name && block.name !== block.id) {
-    return `[@block=${slugify(block.name)} src=${block.id}]\n${block.content}`
-  }
-  return `[@block=${block.id}]\n${block.content}`
-}
-
-/**
  * Compiles context blocks into LLM messages.
  * Groups blocks by role, sorts by order, prepends [@block=id] markers,
  * and joins with blank-line separators.
  */
 export function compileBlocks(blocks: ContextBlock[]): ContextMessage[] {
+  const renderBlock = (b: ContextBlock): string => {
+    if (b.name && b.name !== b.id) {
+      const slug = b.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      return `[@block=${slug} src=${b.id}]\n${b.content}`
+    }
+    return `[@block=${b.id}]\n${b.content}`
+  }
+
   const systemBlocks = blocks.filter(b => b.role === 'system').sort((a, b) => a.order - b.order)
   const userBlocks = blocks.filter(b => b.role === 'user').sort((a, b) => a.order - b.order)
 

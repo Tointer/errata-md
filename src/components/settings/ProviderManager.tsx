@@ -4,6 +4,7 @@ import { api, type ProviderConfigSafe } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Plus, Trash2, Star, Pencil, RefreshCw, Loader2, X, ArrowLeft, Minus, Zap, Copy } from 'lucide-react'
+import { EmptyHint, Hint } from '@/components/ui/prose-text'
 
 const PRESETS = {
   deepseek: { name: 'DeepSeek', baseURL: 'https://api.deepseek.com', defaultModel: 'deepseek-chat' },
@@ -46,7 +47,7 @@ export function ProviderList({ onManage }: { onManage: () => void }) {
   return (
     <div className="space-y-2">
       {providers.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No providers configured. Using DeepSeek via environment variable.</p>
+        <EmptyHint>No providers configured. Using DeepSeek via environment variable.</EmptyHint>
       ) : (
         providers.map((p) => (
           <div key={p.id} className="flex items-center gap-1.5 py-0.5">
@@ -511,8 +512,8 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
           <div className="max-w-2xl mx-auto p-6 space-y-2">
             {providers.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-sm text-muted-foreground italic mb-4">No providers configured.</p>
-                <p className="text-xs text-muted-foreground mb-6">Using DeepSeek via environment variable as fallback.</p>
+                <EmptyHint size="sm" className="mb-4">No providers configured.</EmptyHint>
+                <Hint className="mb-6">Using DeepSeek via environment variable as fallback.</Hint>
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={openAdd}>
                   <Plus className="size-3" /> Add your first provider
                 </Button>

@@ -33,42 +33,6 @@ export async function saveAssociations(
   await writeJsonAtomic(path, assoc)
 }
 
-// --- Fragment tag sync ---
-
-async function addFragmentTag(
-  dataDir: string,
-  storyId: string,
-  fragmentId: string,
-  tag: string
-): Promise<void> {
-  const fragment = await getFragment(dataDir, storyId, fragmentId)
-  if (!fragment) {
-    log.warn(`Cannot add tag: fragment not found`, { storyId, fragmentId, tag })
-    return
-  }
-  if (fragment.tags.includes(tag)) return
-  fragment.tags.push(tag)
-  fragment.updatedAt = new Date().toISOString()
-  await updateFragment(dataDir, storyId, fragment)
-}
-
-async function removeFragmentTag(
-  dataDir: string,
-  storyId: string,
-  fragmentId: string,
-  tag: string
-): Promise<void> {
-  const fragment = await getFragment(dataDir, storyId, fragmentId)
-  if (!fragment) {
-    log.warn(`Cannot remove tag: fragment not found`, { storyId, fragmentId, tag })
-    return
-  }
-  if (!fragment.tags.includes(tag)) return
-  fragment.tags = fragment.tags.filter(t => t !== tag)
-  fragment.updatedAt = new Date().toISOString()
-  await updateFragment(dataDir, storyId, fragment)
-}
-
 // --- Tag operations ---
 
 export async function addTag(
@@ -86,7 +50,17 @@ export async function addTag(
   }
   await Promise.all([
     saveAssociations(dataDir, storyId, assoc),
-    addFragmentTag(dataDir, storyId, fragmentId, tag),
+    (async () => {
+      const fragment = await getFragment(dataDir, storyId, fragmentId)
+      if (!fragment) {
+        log.warn(`Cannot add tag: fragment not found`, { storyId, fragmentId, tag })
+        return
+      }
+      if (fragment.tags.includes(tag)) return
+      fragment.tags.push(tag)
+      fragment.updatedAt = new Date().toISOString()
+      await updateFragment(dataDir, storyId, fragment)
+    })(),
   ])
 }
 
@@ -105,7 +79,17 @@ export async function removeTag(
   }
   await Promise.all([
     saveAssociations(dataDir, storyId, assoc),
-    removeFragmentTag(dataDir, storyId, fragmentId, tag),
+    (async () => {
+      const fragment = await getFragment(dataDir, storyId, fragmentId)
+      if (!fragment) {
+        log.warn(`Cannot remove tag: fragment not found`, { storyId, fragmentId, tag })
+        return
+      }
+      if (!fragment.tags.includes(tag)) return
+      fragment.tags = fragment.tags.filter(t => t !== tag)
+      fragment.updatedAt = new Date().toISOString()
+      await updateFragment(dataDir, storyId, fragment)
+    })(),
   ])
 }
 

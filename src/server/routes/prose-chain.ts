@@ -8,7 +8,7 @@ import {
 import {
   addProseSection,
   insertProseSection,
-  getFullProseChain,
+  getProseChain,
   switchActiveProse,
   removeProseSection,
   reorderProseSections,
@@ -25,7 +25,7 @@ export function proseChainRoutes(dataDir: string) {
         return { error: 'Story not found' }
       }
 
-      const chain = await getFullProseChain(dataDir, params.storyId)
+      const chain = await getProseChain(dataDir, params.storyId)
       if (!chain) {
         return { entries: [] }
       }

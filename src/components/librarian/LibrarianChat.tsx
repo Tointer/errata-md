@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send, Loader2 } from 'lucide-react'
+import { EmptyHint } from '@/components/ui/prose-text'
 import {
   AssistantMessageView,
   type AssistantMessage,
@@ -221,9 +222,9 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
         <div className="p-3 space-y-3">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center" data-component-id="librarian-chat-empty">
-              <p className="text-xs text-muted-foreground italic max-w-[240px]">
+              <EmptyHint className="max-w-[240px]">
                 Ask the librarian to make changes across your story — update characters, adjust guidelines, or reshape knowledge.
-              </p>
+              </EmptyHint>
             </div>
           )}
 

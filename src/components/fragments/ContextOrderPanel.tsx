@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { GripVertical, Monitor, User } from 'lucide-react'
+import { EmptyHint } from '@/components/ui/prose-text'
 import { cn } from '@/lib/utils'
 
 interface ContextOrderPanelProps {
@@ -107,9 +108,9 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
   if (stickyFragments.length === 0) {
     return (
       <div className="p-6 text-center">
-        <p className="text-sm text-muted-foreground italic">
+        <EmptyHint size="sm">
           No pinned fragments. Pin fragments from the Characters, Guidelines, or Knowledge panels.
-        </p>
+        </EmptyHint>
       </div>
     )
   }

@@ -8,6 +8,7 @@ import { GenerationThoughts } from './GenerationThoughts'
 import { type ThoughtStep } from './InlineGenerationInput'
 import { buildAnnotationHighlighter, formatDialogue, composeTextTransforms, stripEmphasisInDialogue, type Annotation } from '@/lib/character-mentions'
 import { RefreshCw, Undo2, PenLine, Bug, Trash2, GitBranch, MessageSquare, ChevronLeft, ChevronRight, Info, BookOpen } from 'lucide-react'
+import { Caption } from '@/components/ui/prose-text'
 
 interface ProseBlockProps {
   storyId: string
@@ -479,9 +480,9 @@ export const ProseBlock = memo(function ProseBlock({
               title="Click to edit prompt and regenerate"
             >
               <div className="w-0.5 min-h-[1.25rem] rounded-full bg-primary/20 group-hover/prompt:bg-primary/45 transition-colors shrink-0 mt-0.5" />
-              <span className="font-display italic text-sm text-muted-foreground group-hover/prompt:text-muted-foreground truncate transition-colors">
-                {generatedFrom || fragment.description}
-              </span>
+              <Caption asChild size="sm" className="font-display italic group-hover/prompt:text-muted-foreground truncate transition-colors">
+                <span>{generatedFrom || fragment.description}</span>
+              </Caption>
               <RefreshCw className="size-3 shrink-0 mt-1 opacity-0 group-hover/prompt:opacity-40 transition-opacity" />
               {hasMultiple && (
                 <span className="text-[0.625rem] font-mono text-muted-foreground shrink-0 ml-auto mt-0.5">{variationIndex + 1}/{variationCount}</span>
@@ -490,7 +491,7 @@ export const ProseBlock = memo(function ProseBlock({
           ) : (
             <div className="flex items-start gap-2.5">
               <div className="w-0.5 min-h-[1.25rem] rounded-full bg-border/30 shrink-0 mt-0.5" />
-              <span className="font-display italic text-sm text-muted-foreground truncate">{fragment.description}</span>
+              <Caption asChild size="sm" className="font-display italic truncate"><span>{fragment.description}</span></Caption>
               {hasMultiple && (
                 <span className="text-[0.625rem] font-mono text-muted-foreground shrink-0 ml-auto mt-0.5">{variationIndex + 1}/{variationCount}</span>
               )}

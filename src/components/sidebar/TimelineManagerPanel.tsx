@@ -4,6 +4,7 @@ import { api, type BranchMeta } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { GitBranch, Plus, Pencil, Trash2, Check, X } from 'lucide-react'
+import { MetaLabel } from '@/components/ui/prose-text'
 
 interface TimelineManagerPanelProps {
   storyId: string
@@ -79,9 +80,11 @@ export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
     <ScrollArea className="h-full">
       <div className="p-4 space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            {branches.length} {branches.length === 1 ? 'timeline' : 'timelines'}
-          </p>
+          <MetaLabel asChild>
+            <p>
+              {branches.length} {branches.length === 1 ? 'timeline' : 'timelines'}
+            </p>
+          </MetaLabel>
           <Button
             size="sm"
             variant="outline"

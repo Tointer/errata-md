@@ -3,6 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { componentId } from '@/lib/dom-ids'
+import { EmptyHint } from '@/components/ui/prose-text'
 
 interface BlockContentViewProps {
   messages: Array<{ role: string; content: string }>
@@ -70,7 +71,7 @@ export function BlockContentView({ messages, blocks, className }: BlockContentVi
   if (segments.length === 0) {
     return (
       <div className={cn('flex items-center justify-center py-16', className)}>
-        <p className="text-xs text-muted-foreground italic">No blocks in context</p>
+        <EmptyHint>No blocks in context</EmptyHint>
       </div>
     )
   }

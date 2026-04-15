@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { useWritingTransforms } from '@/lib/theme'
 import { cn } from '@/lib/utils'
+import { Caption } from '@/components/ui/prose-text'
 
 type SelectionTransformMode = 'rewrite' | 'expand' | 'compress' | 'custom'
 
@@ -594,9 +595,9 @@ export function ProseWritingPanel({
           <div className="flex items-center gap-3 min-w-0">
             <Wand2 className="size-4 text-primary/60 shrink-0" />
             {currentFragment?.description ? (
-              <span className="font-display italic text-sm text-muted-foreground truncate max-w-[40ch]">
-                {currentFragment.description}
-              </span>
+              <Caption asChild size="sm" className="font-display italic truncate max-w-[40ch]">
+                <span>{currentFragment.description}</span>
+              </Caption>
             ) : (
               <span className="font-display text-sm text-muted-foreground">
                 Writing Panel

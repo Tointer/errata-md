@@ -25,6 +25,11 @@ export const librarian = {
     apiFetch<AgentRunTraceRecord[]>(`/stories/${storyId}/librarian/agent-runs`),
   getAnalysis: (storyId: string, id: string) =>
     apiFetch<LibrarianAnalysis>(`/stories/${storyId}/librarian/analyses/${id}`),
+  updateAnalysis: (storyId: string, analysisId: string, data: { summaryUpdate: string }) =>
+    apiFetch<LibrarianAnalysis>(`/stories/${storyId}/librarian/analyses/${analysisId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   acceptSuggestion: (storyId: string, analysisId: string, index: number) =>
     apiFetch<LibrarianAcceptSuggestionResponse>(`/stories/${storyId}/librarian/analyses/${analysisId}/suggestions/${index}/accept`, { method: 'POST' }),
   dismissSuggestion: (storyId: string, analysisId: string, index: number) =>

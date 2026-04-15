@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { History, Check, ChevronDown } from 'lucide-react'
+import { Caption } from '@/components/ui/prose-text'
 
 interface VariationSwitcherProps {
   storyId: string
@@ -74,9 +75,9 @@ export function VariationSwitcher({ storyId, sectionIndex, entry }: VariationSwi
                     </Badge>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                <Caption className="mt-0.5 truncate">
                   {fragment.description || fragment.name}
-                </p>
+                </Caption>
                 <p className="text-[0.625rem] text-muted-foreground">
                   {new Date(fragment.createdAt).toLocaleDateString()}
                 </p>

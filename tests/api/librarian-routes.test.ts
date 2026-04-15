@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTempDir, makeTestSettings } from '../setup'
 import { createApp } from '@/server/api'
-import { createStory, createFragment, getFragment } from '@/server/fragments/storage'
+import { createStory, createFragment, getFragment, getStory, updateStory } from '@/server/fragments/storage'
 import {
   saveAnalysis,
   saveState,
@@ -189,6 +189,70 @@ describe('librarian API routes', () => {
         new Request(`http://localhost/api/stories/${storyId}/librarian/analyses/nonexistent`),
       )
       expect(res.status).toBe(404)
+    })
+  })
+
+  describe('PATCH /stories/:storyId/librarian/analyses/:analysisId', () => {
+    it('updates the saved summary and syncs latest fragment/story summary text', async () => {
+      await createFragment(dataDir, storyId, {
+        id: 'pr-0001',
+        type: 'prose',
+        name: 'Scene 1',
+        description: 'Opening scene',
+        content: 'Original prose.',
+        tags: [],
+        refs: [],
+        sticky: false,
+        placement: 'user',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+        order: 0,
+        meta: {
+          _librarian: {
+            summary: 'Something happened.',
+            analysisId: 'analysis-edit',
+          },
+        },
+      })
+
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-edit',
+        fragmentId: 'pr-0001',
+        summaryUpdate: 'Something happened.',
+      }))
+
+      const story = await getStory(dataDir, storyId)
+      await updateStory(dataDir, {
+        ...story!,
+        summary: 'Earlier events. Something happened. Later events.',
+      })
+
+      const res = await app.fetch(
+        new Request(`http://localhost/api/stories/${storyId}/librarian/analyses/analysis-edit`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ summaryUpdate: 'Something more precise happened.' }),
+        }),
+      )
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.summaryUpdate).toBe('Something more precise happened.')
+
+      const updatedAnalysis = await app.fetch(
+        new Request(`http://localhost/api/stories/${storyId}/librarian/analyses/analysis-edit`),
+      )
+      const updatedAnalysisJson = await updatedAnalysis.json()
+      expect(updatedAnalysisJson.summaryUpdate).toBe('Something more precise happened.')
+
+      const updatedFragment = await getFragment(dataDir, storyId, 'pr-0001')
+      expect(updatedFragment?.meta?._librarian).toEqual({
+        summary: 'Something more precise happened.',
+        analysisId: 'analysis-edit',
+      })
+
+      const updatedStory = await getStory(dataDir, storyId)
+      expect(updatedStory?.summary).toBe('Earlier events. Something more precise happened. Later events.')
     })
   })
 

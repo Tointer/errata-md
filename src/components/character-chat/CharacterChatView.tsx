@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send, Loader2 } from 'lucide-react'
+import { Caption, EmptyHint } from '@/components/ui/prose-text'
 import {
   AssistantMessageView,
   type AssistantMessage,
@@ -281,9 +282,9 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
                 <h3 className="font-display text-xl tracking-tight mb-1">
                   {selectedCharacter.name}
                 </h3>
-                <p className="text-xs text-muted-foreground italic max-w-[280px]">
+                <Caption className="italic max-w-[280px]">
                   {selectedCharacter.description}
-                </p>
+                </Caption>
               </div>
               <p className="text-[0.6875rem] text-muted-foreground max-w-[240px] leading-relaxed">
                 Start a conversation. The character will respond in their voice, knowing only the story events up to your selected point.
@@ -294,18 +295,18 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
           {/* No character selected */}
           {messages.length === 0 && !selectedCharacter && characters.length > 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <p className="text-xs text-muted-foreground italic">
+              <EmptyHint>
                 Select a character to begin.
-              </p>
+              </EmptyHint>
             </div>
           )}
 
           {/* No characters in story */}
           {characters.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <p className="text-xs text-muted-foreground italic max-w-[240px]">
+              <EmptyHint className="max-w-[240px]">
                 Create character fragments in your story first, then return here to chat with them.
-              </p>
+              </EmptyHint>
             </div>
           )}
 

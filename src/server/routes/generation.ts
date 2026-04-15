@@ -15,7 +15,7 @@ import { applyBlockConfig } from '../blocks/apply'
 import { createScriptHelpers } from '../blocks/script-context'
 import { createFragmentTools } from '../llm/tools'
 import { getModel, buildProviderOptions } from '../llm/client'
-import { createWriterAgent } from '../llm/writer-agent'
+import { ToolLoopAgent, stepCountIs } from 'ai'
 import { runPrewriter, createWriterBriefBlocks } from '../llm/prewriter'
 import {
   saveGenerationLog,
@@ -311,10 +311,11 @@ export function generationRoutes(dataDir: string) {
             const writerMaxSteps = isPrewriterMode
               ? Math.max(1, configuredMaxSteps - prewriterStepCount)
               : configuredMaxSteps
-            const writerAgent = createWriterAgent({
+            const writerAgent = new ToolLoopAgent({
               model,
               tools,
-              maxSteps: writerMaxSteps,
+              toolChoice: 'auto',
+              stopWhen: stepCountIs(writerMaxSteps),
               temperature,
               providerOptions,
             })

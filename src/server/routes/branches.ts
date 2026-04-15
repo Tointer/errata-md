@@ -1,4 +1,5 @@
 import { Elysia, t } from 'elysia'
+import { withStory } from './_helpers'
 import { getStory } from '../fragments/storage'
 import {
   getBranchesIndex,
@@ -6,14 +7,9 @@ import {
 
 export function branchRoutes(dataDir: string) {
   return new Elysia({ detail: { tags: ['Branches'] } })
-    .get('/stories/:storyId/branches', async ({ params, set }) => {
-      const story = await getStory(dataDir, params.storyId)
-      if (!story) {
-        set.status = 404
-        return { error: 'Story not found' }
-      }
+    .get('/stories/:storyId/branches', withStory(dataDir, async (_story, { params }) => {
       return getBranchesIndex(dataDir, params.storyId)
-    }, {
+    }), {
       detail: { summary: 'List all branches' },
     })
 

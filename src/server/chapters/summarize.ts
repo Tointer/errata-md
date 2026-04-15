@@ -1,7 +1,7 @@
 import { ToolLoopAgent, stepCountIs } from 'ai'
 import { getModel, buildProviderOptions } from '../llm/client'
 import { getStory, getFragment, updateFragment } from '../fragments/storage'
-import { getFullProseChain } from '../fragments/prose-chain'
+import { getProseChain } from '../fragments/prose-chain'
 import { instructionRegistry } from '../instructions'
 import { createLogger } from '../logging'
 
@@ -40,7 +40,7 @@ export async function summarizeChapter(
     throw new Error('Chapter marker not found')
   }
 
-  const chain = await getFullProseChain(dataDir, storyId)
+  const chain = await getProseChain(dataDir, storyId)
   if (!chain) {
     throw new Error('No prose chain found')
   }

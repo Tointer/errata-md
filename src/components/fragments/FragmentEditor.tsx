@@ -13,6 +13,7 @@ import type { FrozenSection } from '@/lib/api/types'
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
 import { copyFragmentToClipboard } from '@/lib/fragment-clipboard'
 import { CropDialog } from '@/components/fragments/CropDialog'
+import { Hint, EmptyHint, MetaLabel } from '@/components/ui/prose-text'
 
 export interface FragmentPrefill {
   name: string
@@ -690,9 +691,9 @@ export function FragmentEditor({
                 >
                   <ImagePlus className="size-8 text-muted-foreground" />
                   <div className="text-center">
-                    <p className="text-sm text-muted-foreground">
+                    <Hint size="sm">
                       {isEditing ? 'Drop an image here or click to upload' : 'No image set'}
-                    </p>
+                    </Hint>
                     <p className="text-[0.6875rem] text-muted-foreground mt-1">PNG, JPG, SVG, or paste a URL</p>
                   </div>
                   {isEditing && (
@@ -846,7 +847,7 @@ export function FragmentEditor({
                     <span className="text-[0.625rem] text-muted-foreground">Current v{fragment.version ?? 1}</span>
                   </div>
                   {versions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No previous versions yet.</p>
+                    <Hint>No previous versions yet.</Hint>
                   ) : (
                     <div className="space-y-1.5 max-h-36 overflow-auto pr-1">
                       {versions.map((v: FragmentVersion) => (
@@ -927,10 +928,10 @@ export function FragmentEditor({
               </>
             ) : (
               <>
-                <span className="text-xs text-muted-foreground transition-opacity">
+                <MetaLabel className="transition-opacity">
                   {saveStatus === 'saving' && 'Saving...'}
                   {saveStatus === 'saved' && 'Saved'}
-                </span>
+                </MetaLabel>
                 <div className="flex-1" />
                 <Button type="button" size="sm" variant="ghost" onClick={handleClose}>
                   Close
@@ -1131,7 +1132,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
       )}
 
       {visualRefs.length === 0 && unlinkedMedia.length === 0 && (
-        <p className="text-xs text-muted-foreground italic mb-2">No image or icon linked</p>
+        <EmptyHint className="mb-2">No image or icon linked</EmptyHint>
       )}
 
       {/* Available media — click to instantly link */}
@@ -1266,7 +1267,7 @@ function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
           </Badge>
         ))}
         {(!data?.tags || data.tags.length === 0) && (
-          <span className="text-xs text-muted-foreground italic">No tags</span>
+          <EmptyHint asChild><span>No tags</span></EmptyHint>
         )}
       </div>
       <div className="flex gap-1.5">
@@ -1347,7 +1348,7 @@ function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
           </Badge>
         ))}
         {(!data?.refs || data.refs.length === 0) && (
-          <span className="text-xs text-muted-foreground italic">No refs</span>
+          <EmptyHint asChild><span>No refs</span></EmptyHint>
         )}
       </div>
       {data?.backRefs && data.backRefs.length > 0 && (

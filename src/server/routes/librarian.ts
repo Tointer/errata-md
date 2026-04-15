@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia'
-import { getStory, getFragment } from '../fragments/storage'
+import { getStory, getFragment, updateFragment, updateStory } from '../fragments/storage'
 import {
   getGenerationLog,
   listGenerationLogs,
@@ -108,6 +108,54 @@ export function librarianRoutes(dataDir: string) {
       }
       return analysis
     }, { detail: { summary: 'Get an analysis by ID' } })
+
+    .patch('/stories/:storyId/librarian/analyses/:analysisId', async ({ params, body, set }) => {
+      const analysis = await getLibrarianAnalysis(dataDir, params.storyId, params.analysisId)
+      if (!analysis) {
+        set.status = 404
+        return { error: 'Analysis not found' }
+      }
+
+      const story = await getStory(dataDir, params.storyId)
+      if (!story) {
+        set.status = 404
+        return { error: 'Story not found' }
+      }
+
+      const previousSummary = analysis.summaryUpdate
+      const nextSummary = body.summaryUpdate.trim()
+      analysis.summaryUpdate = nextSummary
+      await saveLibrarianAnalysis(dataDir, params.storyId, analysis)
+
+      const latestByFragment = await getLatestAnalysisIdsByFragment(dataDir, params.storyId)
+      if (latestByFragment.get(analysis.fragmentId) === analysis.id) {
+        const fragment = await getFragment(dataDir, params.storyId, analysis.fragmentId)
+        if (fragment) {
+          const meta = { ...fragment.meta }
+          const existing = (meta._librarian ?? {}) as Record<string, unknown>
+          meta._librarian = { ...existing, summary: nextSummary, analysisId: analysis.id }
+          await updateFragment(dataDir, params.storyId, {
+            ...fragment,
+            meta,
+          })
+        }
+      }
+
+      if (previousSummary !== nextSummary && previousSummary && story.summary.includes(previousSummary)) {
+        await updateStory(dataDir, {
+          ...story,
+          summary: story.summary.replace(previousSummary, nextSummary),
+          updatedAt: new Date().toISOString(),
+        })
+      }
+
+      return analysis
+    }, {
+      body: t.Object({
+        summaryUpdate: t.String(),
+      }),
+      detail: { summary: 'Update an analysis summary' },
+    })
 
     .post('/stories/:storyId/librarian/analyses/:analysisId/suggestions/:index/accept', async ({ params, set }) => {
       const analysis = await getLibrarianAnalysis(dataDir, params.storyId, params.analysisId)

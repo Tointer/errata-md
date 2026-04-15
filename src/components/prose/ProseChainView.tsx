@@ -5,6 +5,7 @@ import { api, type Fragment, type ProseChainEntry } from '@/lib/api'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { StreamMarkdown } from '@/components/ui/stream-markdown'
 import { Loader2, Wand2, Bookmark } from 'lucide-react'
+import { Hint } from '@/components/ui/prose-text'
 import { useQuickSwitch, useProseWidth, PROSE_WIDTH_VALUES, useCharacterMentions } from '@/lib/theme'
 import { ProseBlock } from './ProseBlock'
 import { ChapterMarker } from './ChapterMarker'
@@ -643,9 +644,9 @@ export function ProseChainView({
               <p className="font-display text-2xl italic text-muted-foreground mb-2">
                 The page awaits.
               </p>
-              <p className="text-sm text-muted-foreground mb-8 max-w-xs leading-relaxed">
+              <Hint size="sm" className="mb-8 max-w-xs leading-relaxed">
                 Write your first passage below, or let the wizard help you set up your story.
-              </p>
+              </Hint>
               {onLaunchWizard && (
                 <button
                   onClick={onLaunchWizard}

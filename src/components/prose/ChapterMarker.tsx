@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback, memo } from 'react'
+import { useState, useRef, useCallback, useEffect, memo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Fragment } from '@/lib/api'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Bookmark, Sparkles, ChevronDown, ChevronUp, Pencil, Trash2, Loader2 } from 'lucide-react'
 
@@ -23,8 +25,14 @@ export const ChapterMarker = memo(function ChapterMarker({
 }: ChapterMarkerProps) {
   const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [isEditingSummary, setIsEditingSummary] = useState(false)
+  const [summaryDraft, setSummaryDraft] = useState(fragment.content)
   const titleRef = useRef<HTMLSpanElement>(null)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    setSummaryDraft(fragment.content)
+  }, [fragment.content])
 
   const renameMutation = useMutation({
     mutationFn: (name: string) =>
@@ -42,6 +50,21 @@ export const ChapterMarker = memo(function ChapterMarker({
     mutationFn: () => api.chapters.summarize(storyId, fragment.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+      setSummaryExpanded(true)
+      setIsEditingSummary(false)
+    },
+  })
+
+  const updateSummaryMutation = useMutation({
+    mutationFn: (content: string) =>
+      api.fragments.update(storyId, fragment.id, {
+        name: fragment.name,
+        description: fragment.description,
+        content,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+      setIsEditingSummary(false)
       setSummaryExpanded(true)
     },
   })
@@ -169,9 +192,53 @@ export const ChapterMarker = memo(function ChapterMarker({
       {/* Summary — collapsible */}
       {hasSummary && summaryExpanded && (
         <div className="mt-3 mx-auto max-w-md animate-in fade-in slide-in-from-top-1 duration-200">
-          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground italic text-center px-4">
-            {fragment.content}
-          </p>
+          {isEditingSummary ? (
+            <div className="space-y-2 px-4">
+              <Textarea
+                value={summaryDraft}
+                onChange={(e) => setSummaryDraft(e.target.value)}
+                className="min-h-[120px] resize-y bg-background/50 text-[0.75rem] leading-relaxed"
+                placeholder="Chapter summary..."
+              />
+              <div className="flex justify-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-[0.6875rem]"
+                  onClick={() => {
+                    setSummaryDraft(fragment.content)
+                    setIsEditingSummary(false)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 text-[0.6875rem]"
+                  disabled={updateSummaryMutation.isPending}
+                  onClick={() => updateSummaryMutation.mutate(summaryDraft.trim())}
+                >
+                  {updateSummaryMutation.isPending ? 'Saving...' : 'Save summary'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-[0.6875rem] leading-relaxed text-muted-foreground italic text-center px-4 whitespace-pre-wrap">
+                {fragment.content}
+              </p>
+              <div className="mt-2 flex justify-center">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-[0.625rem] text-amber-500/80 hover:text-amber-400 hover:bg-amber-500/10"
+                  onClick={() => setIsEditingSummary(true)}
+                >
+                  Edit summary
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

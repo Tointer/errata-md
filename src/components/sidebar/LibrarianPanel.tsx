@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   AlertTriangle,
@@ -29,6 +30,7 @@ import {
   ArrowLeft,
   X,
 } from 'lucide-react'
+import { EmptyState } from '@/components/ui/async-view'
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
 import { LibrarianChat } from '@/components/librarian/LibrarianChat'
 
@@ -228,12 +230,11 @@ function ConversationList({ conversations, onSelect, onNew, onDelete }: Conversa
       <ScrollArea className="flex-1 min-h-0">
         <div className="px-3 pb-3 space-y-1">
           {sorted.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <MessageSquare className="size-5 text-muted-foreground/30 mb-2" />
-              <p className="text-xs text-muted-foreground italic max-w-[200px]">
-                No conversations yet. Start a new chat to ask the librarian about your story.
-              </p>
-            </div>
+            <EmptyState
+              icon={<MessageSquare className="size-5" />}
+              title="No conversations yet"
+              hint="Start a new chat to ask the librarian about your story."
+            />
           )}
 
           {sorted.map((conv) => {
@@ -390,12 +391,12 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
         )}
 
         {!analyses?.length && !hasMentions && !hasTimeline && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <BookOpen className="size-5 text-muted-foreground mb-3" />
-            <p className="text-xs text-muted-foreground italic max-w-[220px]">
-              Generate some prose and the librarian will track your story here.
-            </p>
-          </div>
+          <EmptyState
+            icon={<BookOpen className="size-5" />}
+            title="Nothing tracked yet"
+            hint="Generate some prose and the librarian will annotate your story here."
+            variant="panel"
+          />
         )}
 
         {/* Character mentions */}
@@ -511,8 +512,14 @@ function AnalysisItem({
   charName: (id: string) => string
 }) {
   const queryClient = useQueryClient()
+  const [editingSummary, setEditingSummary] = useState(false)
+  const [summaryDraft, setSummaryDraft] = useState('')
   const date = new Date(summary.createdAt)
   const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  useEffect(() => {
+    setSummaryDraft(analysis?.summaryUpdate ?? '')
+  }, [analysis?.summaryUpdate])
 
   const acceptMutation = useMutation({
     mutationFn: (index: number) =>
@@ -537,6 +544,18 @@ function AnalysisItem({
     mutationFn: () => api.librarian.deleteAnalysis(storyId, summary.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-analyses', storyId] })
+    },
+  })
+
+  const updateSummaryMutation = useMutation({
+    mutationFn: (summaryUpdate: string) =>
+      api.librarian.updateAnalysis(storyId, summary.id, { summaryUpdate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['librarian-analyses', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['librarian-analysis', storyId, summary.id] })
+      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['story', storyId] })
+      setEditingSummary(false)
     },
   })
 
@@ -583,12 +602,55 @@ function AnalysisItem({
 
       {expanded && analysis && (
         <div className="border-t border-border/15 px-3 py-2.5 space-y-2.5 text-[0.6875rem] bg-muted/10">
-          {analysis.summaryUpdate && (
-            <div>
+          <div>
+            <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground text-[0.625rem]">Summary update</span>
-              <p className="text-foreground/65 leading-relaxed mt-0.5">{analysis.summaryUpdate}</p>
+              {!editingSummary ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-5 px-1.5 text-[0.5625rem]"
+                  onClick={() => setEditingSummary(true)}
+                >
+                  Edit
+                </Button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-5 px-1.5 text-[0.5625rem]"
+                    onClick={() => {
+                      setSummaryDraft(analysis.summaryUpdate)
+                      setEditingSummary(false)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-5 px-1.5 text-[0.5625rem]"
+                    disabled={updateSummaryMutation.isPending}
+                    onClick={() => updateSummaryMutation.mutate(summaryDraft.trim())}
+                  >
+                    {updateSummaryMutation.isPending ? 'Saving...' : 'Save'}
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
+            {editingSummary ? (
+              <Textarea
+                value={summaryDraft}
+                onChange={(e) => setSummaryDraft(e.target.value)}
+                className="mt-1.5 min-h-[88px] resize-y bg-background/50 text-[0.6875rem] leading-relaxed"
+                placeholder="Summary update..."
+              />
+            ) : analysis.summaryUpdate ? (
+              <p className="text-foreground/65 leading-relaxed mt-0.5 whitespace-pre-wrap">{analysis.summaryUpdate}</p>
+            ) : (
+              <p className="text-muted-foreground italic mt-0.5">No summary update</p>
+            )}
+          </div>
 
           {analysis.structuredSummary && (
             <div className="space-y-1.5">
