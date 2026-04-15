@@ -65,6 +65,8 @@ interface ErrataDesktopApi {
 	apiOrigin: string
 	getRuntimeInfo: () => Promise<ErrataDesktopRuntimeInfo>
 	chooseVault: (options?: { vaultPath?: string }) => Promise<ErrataChooseVaultResult>
+	openPath: (targetPath: string) => Promise<{ ok: boolean }>
+	removeVaultFromRecents: (targetPath: string) => Promise<{ ok: boolean }>
 	openExternal: (url: string) => Promise<{ ok: boolean }>
 	showOpenDialog: (options?: ErrataDesktopOpenDialogOptions) => Promise<{ canceled: boolean; filePaths: string[] }>
 	saveFile: (options: ErrataDesktopSaveFileOptions) => Promise<{ canceled: boolean; filePath: string | null }>

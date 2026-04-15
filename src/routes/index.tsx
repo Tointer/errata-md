@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Trash2, Sparkles, BookOpen, Users, Scroll, Globe, Upload, ChevronRight, FileJson, AlertCircle, Clipboard, Camera, X, ImagePlus, Check, ChevronsUpDown, FolderPlus } from 'lucide-react'
+import { Plus, Trash2, Sparkles, BookOpen, Users, Scroll, Globe, Upload, ChevronRight, FileJson, AlertCircle, Clipboard, Camera, X, ImagePlus, Check, ChevronsUpDown, FolderOpen, FolderPlus } from 'lucide-react'
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import { ErrataLogo } from '@/components/ErrataLogo'
 import { ImportDialog } from '@/components/ImportDialog'
@@ -34,7 +34,7 @@ import {
   parseCardJson,
 } from '@/lib/importers/tavern-card'
 import { GeneratedCover } from '@/components/GeneratedCover'
-import { chooseVault, getDesktopRuntimeInfo, isDesktopApp } from '@/lib/desktop'
+import { chooseVault, getDesktopRuntimeInfo, isDesktopApp, openDesktopPath, removeDesktopVaultFromRecents } from '@/lib/desktop'
 import { useTheme } from '@/lib/theme'
 
 export const Route = createFileRoute('/')({ component: StoryListPage })
@@ -53,6 +53,7 @@ function StoryListPage() {
   const [vaultChangePending, setVaultChangePending] = useState(false)
   const [vaultChangeError, setVaultChangeError] = useState<string | null>(null)
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
+  const [vaultActionPath, setVaultActionPath] = useState<string | null>(null)
 
   // Options section state
   const [showOptions, setShowOptions] = useState(false)
@@ -89,6 +90,27 @@ function StoryListPage() {
     }
   }, [refreshDesktopInfo])
 
+  const resetRendererAfterVaultSwitch = useCallback(async () => {
+    setShowImportDialog(false)
+    setOpen(false)
+    resetDialog()
+    sessionStorage.removeItem('errata:pending-card-import')
+
+    if (typeof window !== 'undefined') {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith('errata:last-accessed:') || key.startsWith('errata:plugin-sidebar:')) {
+          localStorage.removeItem(key)
+        }
+      }
+    }
+
+    await queryClient.cancelQueries()
+    await navigate({ to: '/' })
+    await refreshDesktopInfo()
+    await queryClient.resetQueries()
+    setVaultMenuOpen(false)
+  }, [navigate, queryClient, refreshDesktopInfo])
+
   const handleChangeVault = useCallback(async (vaultPath?: string) => {
     setVaultChangePending(true)
     setVaultChangeError(null)
@@ -100,10 +122,13 @@ function StoryListPage() {
         return
       }
 
-      if (result.canceled || result.switched) {
-        if (result.canceled) {
-          setVaultMenuOpen(false)
-        }
+      if (result.canceled) {
+        setVaultMenuOpen(false)
+        return
+      }
+
+      if (result.switched) {
+        await resetRendererAfterVaultSwitch()
         return
       }
 
@@ -115,7 +140,50 @@ function StoryListPage() {
     } finally {
       setVaultChangePending(false)
     }
-  }, [refreshDesktopInfo])
+  }, [refreshDesktopInfo, resetRendererAfterVaultSwitch])
+
+  const handleOpenVaultFolder = useCallback(async (vaultPath: string) => {
+    setVaultChangeError(null)
+    setVaultActionPath(vaultPath)
+
+    try {
+      const opened = await openDesktopPath(vaultPath)
+      if (!opened) {
+        setVaultChangeError('Desktop vault folder access is unavailable in this window.')
+      }
+    } catch (error) {
+      console.error('[desktop] Failed to open vault folder', error)
+      setVaultChangeError(error instanceof Error ? error.message : 'Failed to open the vault folder.')
+    } finally {
+      setVaultActionPath((current) => current === vaultPath ? null : current)
+    }
+  }, [])
+
+  const handleForgetVault = useCallback(async (vaultPath: string) => {
+    const vaultName = desktopInfo?.recentVaults.find((vault) => vault.path === vaultPath)?.name ?? vaultPath
+    const shouldRemove = window.confirm(`Are you sure? This will not remove vault folder, just removes it from the list.\n\nForget \"${vaultName}\"?`)
+    if (!shouldRemove) {
+      return
+    }
+
+    setVaultChangeError(null)
+    setVaultActionPath(vaultPath)
+
+    try {
+      const removed = await removeDesktopVaultFromRecents(vaultPath)
+      if (!removed) {
+        setVaultChangeError('Desktop vault list management is unavailable in this window.')
+        return
+      }
+
+      await refreshDesktopInfo()
+    } catch (error) {
+      console.error('[desktop] Failed to forget vault', error)
+      setVaultChangeError(error instanceof Error ? error.message : 'Failed to remove the vault from the list.')
+    } finally {
+      setVaultActionPath((current) => current === vaultPath ? null : current)
+    }
+  }, [desktopInfo, refreshDesktopInfo])
 
   const { data: stories, isLoading } = useQuery({
     queryKey: ['stories'],
@@ -329,6 +397,42 @@ function StoryListPage() {
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-foreground">{vault.name}</span>
                         <span className="block truncate text-xs text-muted-foreground" title={vault.path}>{vault.path}</span>
+                      </span>
+                      <span className="ml-auto flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="icon-xs"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-foreground"
+                          disabled={vaultActionPath === vault.path}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            void handleOpenVaultFolder(vault.path)
+                          }}
+                          aria-label={`Open ${vault.name} in Explorer`}
+                          title="Open folder"
+                          data-component-id="story-vault-open-folder"
+                        >
+                          <FolderOpen className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon-xs"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive"
+                          disabled={vault.isActive || vaultActionPath === vault.path}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            void handleForgetVault(vault.path)
+                          }}
+                          aria-label={`Remove ${vault.name} from remembered vaults`}
+                          title={vault.isActive ? 'Current vault cannot be removed from the list' : 'Remove from list'}
+                          data-component-id="story-vault-remove"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       </span>
                     </button>
                   ))}

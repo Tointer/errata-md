@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('errataDesktop', {
   apiOrigin: process.env.ERRATA_API_ORIGIN ?? 'http://127.0.0.1:7739',
   getRuntimeInfo: () => ipcRenderer.invoke('desktop:get-runtime-info'),
   chooseVault: (options) => ipcRenderer.invoke('desktop:choose-vault', options),
+  openPath: (targetPath) => ipcRenderer.invoke('desktop:open-path', targetPath),
+  removeVaultFromRecents: (targetPath) => ipcRenderer.invoke('desktop:remove-vault-from-recents', targetPath),
   openExternal: (url) => ipcRenderer.invoke('desktop:open-external', url),
   showOpenDialog: (options) => ipcRenderer.invoke('desktop:show-open-dialog', options),
   saveFile: (options) => ipcRenderer.invoke('desktop:save-file', options),

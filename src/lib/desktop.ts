@@ -43,6 +43,26 @@ export async function getDesktopRuntimeInfo(): Promise<DesktopRuntimeInfo | null
   return desktop.getRuntimeInfo()
 }
 
+export async function openDesktopPath(targetPath: string): Promise<boolean> {
+  const desktop = getDesktopApi()
+  if (!desktop) {
+    return false
+  }
+
+  await desktop.openPath(targetPath)
+  return true
+}
+
+export async function removeDesktopVaultFromRecents(targetPath: string): Promise<boolean> {
+  const desktop = getDesktopApi()
+  if (!desktop) {
+    return false
+  }
+
+  await desktop.removeVaultFromRecents(targetPath)
+  return true
+}
+
 function browserDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const appRoot = join(__dirname, '..')
@@ -18,9 +18,9 @@ const STORIES_DIR_NAME = 'stories'
 const MAX_RECENT_VAULTS = 8
 
 let backendProcess = null
-let bundledBackendStarted = false
 let mainWindow = null
 let mainWindowPromise = null
+let isSwitchingVault = false
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
@@ -128,6 +128,18 @@ async function persistActiveVaultPath(vaultPath) {
     activeVaultPath: normalizedVaultPath,
     recentVaultPaths: normalizeRecentVaultPaths(desktopState.recentVaultPaths, normalizedVaultPath),
   })
+  return normalizedVaultPath
+}
+
+async function removeVaultFromRecents(vaultPath) {
+  const desktopState = await readDesktopState()
+  const normalizedVaultPath = normalizeVaultPath(vaultPath)
+
+  await writeDesktopState({
+    activeVaultPath: desktopState.activeVaultPath,
+    recentVaultPaths: desktopState.recentVaultPaths.filter((candidate) => candidate !== normalizedVaultPath),
+  })
+
   return normalizedVaultPath
 }
 
@@ -306,6 +318,26 @@ function registerDesktopHandlers() {
     await openExternalUrl(urlString)
     return { ok: true }
   })
+  ipcMain.handle('desktop:open-path', async (_event, targetPath) => {
+    if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+      throw new Error('A target path is required.')
+    }
+
+    const openResult = await shell.openPath(normalizeVaultPath(targetPath))
+    if (openResult) {
+      throw new Error(openResult)
+    }
+
+    return { ok: true }
+  })
+  ipcMain.handle('desktop:remove-vault-from-recents', async (_event, targetPath) => {
+    if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+      throw new Error('A vault path is required.')
+    }
+
+    await removeVaultFromRecents(targetPath)
+    return { ok: true }
+  })
   ipcMain.handle('desktop:choose-vault', async (event, options = {}) => {
     const owner = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow() ?? undefined
     let nextVaultPath = typeof options?.vaultPath === 'string' && options.vaultPath.trim().length > 0
@@ -330,13 +362,7 @@ function registerDesktopHandlers() {
       return { canceled: false, switched: false, vaultPath: nextVaultPath, vaultName: getVaultName(nextVaultPath) }
     }
 
-    await persistActiveVaultPath(nextVaultPath)
-
-    setImmediate(() => {
-      app.isQuitting = true
-      app.relaunch()
-      app.quit()
-    })
+    await switchBackendToVault(nextVaultPath)
 
     return { canceled: false, switched: true, vaultPath: nextVaultPath, vaultName: getVaultName(nextVaultPath) }
   })
@@ -362,11 +388,94 @@ async function configureRuntimePaths() {
   const globalDataDir = getGlobalDataDir()
   const activeVaultPath = await resolveActiveVaultPath()
 
-  process.env.GLOBAL_DATA_DIR = globalDataDir
-  process.env.DATA_DIR = activeVaultPath
+  applyRuntimePaths(activeVaultPath, globalDataDir)
   await mkdir(globalDataDir, { recursive: true })
   await ensureVaultDirectories(activeVaultPath)
   app.setPath('sessionData', join(app.getPath('userData'), 'session'))
+}
+
+function applyRuntimePaths(activeVaultPath, globalDataDir = getGlobalDataDir()) {
+  process.env.GLOBAL_DATA_DIR = globalDataDir
+  process.env.DATA_DIR = normalizeVaultPath(activeVaultPath)
+}
+
+function getBundledServerEntry() {
+  const bundledAppRoot = app.isPackaged ? app.getAppPath() : appRoot
+  return join(bundledAppRoot, '.output', 'server', 'index.mjs')
+}
+
+function createBackendSpawnConfig() {
+  const backendEnv = {
+    ...process.env,
+    HOST: backendUrl.hostname,
+    PORT: backendUrl.port || '7739',
+  }
+
+  if (isDev) {
+    return {
+      command: process.env.ERRATA_NODE_BINARY || 'node',
+      args: ['--import', 'tsx', 'src/server/standalone.ts'],
+      cwd: appRoot,
+      env: {
+        ...backendEnv,
+        ERRATA_APP_ROOT: appRoot,
+        CORS_ORIGINS: rendererUrl,
+      },
+    }
+  }
+
+  return {
+    command: process.execPath,
+    args: [getBundledServerEntry()],
+    cwd: process.resourcesPath,
+    env: {
+      ...backendEnv,
+      ERRATA_APP_ROOT: process.resourcesPath,
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+  }
+}
+
+function waitForProcessExit(child) {
+  return new Promise((resolveExit) => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      resolveExit()
+      return
+    }
+
+    child.once('exit', () => resolveExit())
+  })
+}
+
+async function terminateBackendProcess(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return
+  }
+
+  if (process.platform === 'win32') {
+    await new Promise((resolveKill) => {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      })
+
+      killer.once('exit', () => resolveKill())
+      killer.once('error', () => resolveKill())
+    })
+    await waitForProcessExit(child)
+    return
+  }
+
+  child.kill('SIGTERM')
+  await Promise.race([
+    waitForProcessExit(child),
+    new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
+  ])
+
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill('SIGKILL')
+    await waitForProcessExit(child)
+  }
 }
 
 function spawnBackend() {
@@ -374,23 +483,16 @@ function spawnBackend() {
     return backendProcess
   }
 
-  const backendEnv = {
-    ...process.env,
-    ERRATA_APP_ROOT: appRoot,
-    HOST: backendUrl.hostname,
-    PORT: backendUrl.port || '7739',
-    CORS_ORIGINS: rendererUrl,
-  }
-
-  const backend = spawn(process.env.ERRATA_NODE_BINARY || 'node', ['--import', 'tsx', 'src/server/standalone.ts'], {
-    cwd: appRoot,
-    env: backendEnv,
+  const spawnConfig = createBackendSpawnConfig()
+  const backend = spawn(spawnConfig.command, spawnConfig.args, {
+    cwd: spawnConfig.cwd,
+    env: spawnConfig.env,
     stdio: 'inherit',
   })
 
   backend.once('exit', (code, signal) => {
     backendProcess = null
-    const expectedExit = app.isQuitting || code === 0 || signal === 'SIGTERM'
+    const expectedExit = app.isQuitting || isSwitchingVault || code === 0 || signal === 'SIGTERM'
     if (!expectedExit) {
       console.error(`[electron] Backend exited unexpectedly (code=${code}, signal=${signal})`)
       app.quit()
@@ -401,19 +503,51 @@ function spawnBackend() {
   return backend
 }
 
-async function startBundledBackend() {
-  if (bundledBackendStarted) {
+async function ensureBackendRunning() {
+  spawnBackend()
+  await waitForUrl(`${backendOrigin}/api/health`, 'Backend')
+}
+
+async function stopBackend() {
+  const runningBackend = backendProcess
+  if (!runningBackend) {
     return
   }
 
-  const bundledAppRoot = app.isPackaged ? app.getAppPath() : appRoot
-  process.env.ERRATA_APP_ROOT = app.isPackaged ? process.resourcesPath : appRoot
-  process.env.HOST = backendUrl.hostname
-  process.env.PORT = backendUrl.port || '7739'
+  await terminateBackendProcess(runningBackend)
+}
 
-  const serverEntry = join(bundledAppRoot, '.output', 'server', 'index.mjs')
-  await import(pathToFileURL(serverEntry).href)
-  bundledBackendStarted = true
+async function switchBackendToVault(nextVaultPath) {
+  const previousVaultPath = getDataDir()
+  const globalDataDir = getGlobalDataDir()
+  const normalizedNextVaultPath = normalizeVaultPath(nextVaultPath)
+
+  if (normalizedNextVaultPath === previousVaultPath) {
+    return normalizedNextVaultPath
+  }
+
+  isSwitchingVault = true
+
+  try {
+    await ensureVaultDirectories(normalizedNextVaultPath)
+    await stopBackend()
+    applyRuntimePaths(normalizedNextVaultPath, globalDataDir)
+    await ensureBackendRunning()
+    await persistActiveVaultPath(normalizedNextVaultPath)
+    return normalizedNextVaultPath
+  } catch (error) {
+    try {
+      await stopBackend()
+      applyRuntimePaths(previousVaultPath, globalDataDir)
+      await ensureBackendRunning()
+    } catch (rollbackError) {
+      console.error('[electron] Failed to restore previous backend after vault switch failure', rollbackError)
+    }
+
+    throw error
+  } finally {
+    isSwitchingVault = false
+  }
 }
 
 async function waitForUrl(url, label) {
@@ -448,14 +582,7 @@ async function createMainWindow() {
 
   mainWindowPromise = (async () => {
     await configureRuntimePaths()
-
-    if (isDev) {
-      spawnBackend()
-    } else {
-      await startBundledBackend()
-    }
-
-    await waitForUrl(`${backendOrigin}/api/health`, 'Backend')
+    await ensureBackendRunning()
 
     const window = new BrowserWindow({
       width: 1560,
@@ -507,14 +634,6 @@ async function createMainWindow() {
   }
 }
 
-function stopBackend() {
-  if (!backendProcess || backendProcess.killed) {
-    return
-  }
-
-  backendProcess.kill('SIGTERM')
-}
-
 function handleLaunchError(error) {
   const message = error instanceof Error ? error.message : String(error)
   console.error('[electron] Failed to launch window', error)
@@ -532,7 +651,7 @@ app.on('second-instance', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true
-  stopBackend()
+  void stopBackend()
 })
 
 app.on('window-all-closed', () => {
