@@ -1,4 +1,5 @@
 import { apiFetch, resolveApiPath } from './client'
+import { saveBlob } from '@/lib/desktop'
 import type { StoryMeta } from './types'
 
 export const stories = {
@@ -20,14 +21,7 @@ export const stories = {
     const disposition = res.headers.get('Content-Disposition') ?? ''
     const filenameMatch = disposition.match(/filename="?([^"]+)"?/)
     const filename = filenameMatch?.[1] ?? `errata-export.zip`
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    await saveBlob(blob, filename, [{ name: 'Errata Story Archive', extensions: ['zip'] }])
   },
   importFromZip: async (file: File): Promise<StoryMeta> => {
     const formData = new FormData()

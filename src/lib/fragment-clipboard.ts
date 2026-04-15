@@ -1,4 +1,5 @@
 import { api, type Fragment, type BlockConfig, type AgentBlockConfig } from '@/lib/api'
+import { saveText } from '@/lib/desktop'
 import { parseVisualRefs, type BoundaryBox } from '@/lib/fragment-visuals'
 
 export interface ClipboardAttachment {
@@ -228,28 +229,12 @@ export async function readFragmentFromClipboard(): Promise<FragmentClipboardData
   }
 }
 
-export function downloadExportFile(json: string, filename: string): void {
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+export function downloadExportFile(json: string, filename: string): Promise<{ canceled: boolean; filePath: string | null }> {
+  return saveText(json, filename, [{ name: 'JSON', extensions: ['json'] }])
 }
 
-export function downloadTextFile(text: string, filename: string): void {
-  const blob = new Blob([text], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+export function downloadTextFile(text: string, filename: string): Promise<{ canceled: boolean; filePath: string | null }> {
+  return saveText(text, filename, [{ name: 'Text', extensions: ['txt'] }])
 }
 
 export async function importFragmentEntry(storyId: string, entry: FragmentExportEntry): Promise<Fragment> {

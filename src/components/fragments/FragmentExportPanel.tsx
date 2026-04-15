@@ -155,17 +155,17 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
     }
   }, [includeConfigs, exportedConfigs])
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
     if (selectedFragments.length === 0) return
 
     if (selectedFragments.length === 1 && !bundleConfigs) {
       const json = serializeFragment(selectedFragments[0], mediaById)
       const safeName = selectedFragments[0].name.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 40)
-      downloadExportFile(json, `errata-${safeName}.json`)
+      await downloadExportFile(json, `errata-${safeName}.json`)
     } else {
       const json = serializeBundle(selectedFragments, mediaById, storyName, bundleConfigs)
       const safeName = (storyName ?? 'export').replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 40)
-      downloadExportFile(json, `errata-${safeName}-${selectedFragments.length}.fragment-pack.json`)
+      await downloadExportFile(json, `errata-${safeName}-${selectedFragments.length}.fragment-pack.json`)
     }
   }, [selectedFragments, mediaById, storyName, bundleConfigs])
 

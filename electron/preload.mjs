@@ -1,6 +1,10 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('errataDesktop', {
   platform: process.platform,
   apiOrigin: process.env.ERRATA_API_ORIGIN ?? 'http://127.0.0.1:7739',
+  getRuntimeInfo: () => ipcRenderer.invoke('desktop:get-runtime-info'),
+  openExternal: (url) => ipcRenderer.invoke('desktop:open-external', url),
+  showOpenDialog: (options) => ipcRenderer.invoke('desktop:show-open-dialog', options),
+  saveFile: (options) => ipcRenderer.invoke('desktop:save-file', options),
 })
