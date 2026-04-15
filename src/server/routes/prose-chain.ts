@@ -121,14 +121,13 @@ export function proseChainRoutes(dataDir: string) {
 
       try {
         const fragmentIds = await removeProseSection(dataDir, params.storyId, sectionIndex)
-        // Archive all fragments that were in the section
         const archivedFragmentIds: string[] = []
         for (const fid of fragmentIds) {
           try {
             await archiveFragment(dataDir, params.storyId, fid)
             archivedFragmentIds.push(fid)
           } catch {
-            // Fragment may already be archived or deleted
+            // Fragment may already be moved or deleted
           }
         }
         return { ok: true, archivedFragmentIds }
@@ -137,7 +136,7 @@ export function proseChainRoutes(dataDir: string) {
         return { error: err instanceof Error ? err.message : 'Failed to remove prose section' }
       }
     }, {
-      detail: { summary: 'Remove a section and archive its fragments' },
+      detail: { summary: 'Remove a section and move its fragments to the archive subfolder' },
     })
 
     .patch('/stories/:storyId/prose-chain/reorder', async ({ params, body, set }) => {

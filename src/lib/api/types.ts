@@ -48,7 +48,6 @@ export interface Fragment {
   updatedAt: string
   order: number
   meta: Record<string, unknown>
-  archived: boolean
   version?: number
   versions?: FragmentVersion[]
 }

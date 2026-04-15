@@ -5,6 +5,7 @@ import { getRuntimePluginUi } from './plugins/runtime-ui'
 import { instructionRegistry } from './instructions'
 import { dirname, extname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 
 import { storyRoutes } from './routes/stories'
 import { branchRoutes } from './routes/branches'
@@ -20,6 +21,7 @@ import { tokenUsageRoutes } from './routes/token-usage'
 import { folderRoutes } from './routes/folders'
 
 const DATA_DIR = process.env.DATA_DIR ?? './data'
+const GLOBAL_DATA_DIR = process.env.GLOBAL_DATA_DIR ?? DATA_DIR
 
 function contentTypeForPath(path: string): string {
   const ext = extname(path).toLowerCase()
@@ -40,7 +42,7 @@ function contentTypeForPath(path: string): string {
   }
 }
 
-export function createApp(dataDir: string = DATA_DIR) {
+export function createApp(dataDir: string = DATA_DIR, globalDataDir: string = GLOBAL_DATA_DIR) {
   const app = new Elysia({ prefix: '/api' })
     .use(openapi({
       documentation: {
@@ -86,7 +88,7 @@ export function createApp(dataDir: string = DATA_DIR) {
         }
       })
     }, { detail: { tags: ['Plugins'], summary: 'List all plugins' } })
-    .get('/plugins/:pluginName/ui/*', ({ params, set }) => {
+    .get('/plugins/:pluginName/ui/*', async ({ params, set }) => {
       const runtimeUi = getRuntimePluginUi(params.pluginName)
       if (!runtimeUi) {
         set.status = 404
@@ -110,7 +112,7 @@ export function createApp(dataDir: string = DATA_DIR) {
         return { error: 'Plugin asset not found' }
       }
 
-      return new Response(Bun.file(targetPath), {
+      return new Response(await readFile(targetPath), {
         headers: {
           'content-type': contentTypeForPath(targetPath),
           'cache-control': 'no-cache',
@@ -127,13 +129,13 @@ export function createApp(dataDir: string = DATA_DIR) {
     .use(characterChatRoutes(dataDir))
     .use(generationRoutes(dataDir))
     .use(proseChainRoutes(dataDir))
-    .use(configRoutes(dataDir))
+    .use(configRoutes(globalDataDir))
     .use(agentBlockRoutes(dataDir))
     .use(tokenUsageRoutes(dataDir))
     .use(folderRoutes(dataDir))
 
   // Load instruction overrides after agents are registered (route imports trigger agent registration)
-  instructionRegistry.loadOverridesSync(dataDir)
+  instructionRegistry.loadOverridesSync(globalDataDir)
 
   // Mount plugin routes
   for (const plugin of pluginRegistry.listAll()) {

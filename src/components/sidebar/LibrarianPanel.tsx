@@ -324,7 +324,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
     ...(characters ?? []),
     ...(guidelines ?? []),
     ...(knowledge ?? []),
-  ].filter((f) => !f.archived), [characters, guidelines, knowledge])
+  ], [characters, guidelines, knowledge])
 
   const charName = (id: string) => characters?.find((c) => c.id === id)?.name ?? id
 

@@ -675,7 +675,7 @@ export const ProseBlock = memo(function ProseBlock({
                       className="p-1 rounded-md text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all disabled:opacity-25"
                       disabled={deleteMutation.isPending}
                       onClick={() => {
-                        if (window.confirm('Remove this passage? It will be archived.')) {
+                        if (window.confirm('Remove this passage? It will be moved to the Archieve subfolder.')) {
                           deleteMutation.mutate()
                           setShowActions(false)
                         }

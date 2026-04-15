@@ -60,7 +60,6 @@ function makeFragment(overrides: Partial<Fragment>): Fragment {
     updatedAt: now,
     order: 0,
     meta: {},
-    archived: false,
     ...overrides,
   }
 }

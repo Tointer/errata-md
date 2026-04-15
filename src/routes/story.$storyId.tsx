@@ -330,7 +330,7 @@ function StoryEditorPage() {
       .filter((c): c is string => !!c)
     const text = contents.join('\n\n')
     const safeName = (story?.name ?? 'story').replace(/[^a-zA-Z0-9_-]/g, '_')
-    downloadTextFile(text, `${safeName}.txt`)
+    await downloadTextFile(text, `${safeName}.txt`)
   }, [storyId, story?.name])
 
   // Listen for paste events — if errata data is on clipboard, offer to import

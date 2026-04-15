@@ -310,7 +310,7 @@ describe('librarian agent', () => {
         summarizationThreshold: 0,
         summaryCompact: {
           maxCharacters: 120,
-          targetCharacters: 80,
+          targetCharacters: 100,
         },
       },
     }))
@@ -343,7 +343,7 @@ describe('librarian agent', () => {
     const story = await getStory(dataDir, storyId)
     expect(story).toBeTruthy()
     expect(story!.summary).toBe('Compressed continuity summary.')
-    expect(story!.summary.length).toBeLessThanOrEqual(80)
+    expect(story!.summary.length).toBeLessThanOrEqual(100)
     expect(mockAgentStream).toHaveBeenCalledTimes(2)
   })
 
@@ -581,7 +581,7 @@ describe('librarian agent', () => {
       },
     }))
     await createFragment(dataDir, storyId, makeFragment({
-      id: 'kn-0001',
+      id: 'kn-valdris',
       type: 'knowledge',
       name: 'Valdris',
       description: 'Ancient city',
@@ -600,7 +600,7 @@ describe('librarian agent', () => {
         args: {
           suggestions: [{
             type: 'knowledge',
-            targetFragmentId: 'kn-0001',
+            targetFragmentId: 'kn-valdris',
             name: 'Valdris',
             description: 'Ancient defended city',
             content: 'Valdris is an ancient city defended by stone sentinels.',
@@ -612,9 +612,9 @@ describe('librarian agent', () => {
     const analysis = await runLibrarian(dataDir, storyId, 'pr-0001')
     expect(analysis.fragmentSuggestions[0].accepted).toBe(true)
     expect(analysis.fragmentSuggestions[0].autoApplied).toBe(true)
-    expect(analysis.fragmentSuggestions[0].createdFragmentId).toBe('kn-0001')
+    expect(analysis.fragmentSuggestions[0].createdFragmentId).toBe('kn-valdris')
 
-    const updated = await getFragment(dataDir, storyId, 'kn-0001')
+    const updated = await getFragment(dataDir, storyId, 'kn-valdris')
     expect(updated).toBeTruthy()
     expect(updated?.content).toContain('stone sentinels')
     expect(updated?.refs).toContain('pr-0001')

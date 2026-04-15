@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { Pin, Trash2, X, Monitor, User, Upload, ImagePlus, Link2, Unlink, Crop, Archive, Undo2, Copy, Check, Sparkles, Lock, Unlock, Snowflake } from 'lucide-react'
+import { Pin, X, Monitor, User, Upload, ImagePlus, Link2, Unlink, Crop, Archive, Copy, Check, Sparkles, Lock, Unlock, Snowflake } from 'lucide-react'
 import type { FrozenSection } from '@/lib/api/types'
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
 import { copyFragmentToClipboard } from '@/lib/fragment-clipboard'
@@ -167,26 +167,11 @@ export function FragmentEditor({
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: () => api.fragments.delete(storyId, fragment!.id),
-    onSuccess: () => {
-      invalidate()
-      onClose()
-    },
-  })
-
   const archiveMutation = useMutation({
     mutationFn: () => api.fragments.archive(storyId, fragment!.id),
     onSuccess: () => {
       invalidate()
       onClose()
-    },
-  })
-
-  const restoreMutation = useMutation({
-    mutationFn: () => api.fragments.restore(storyId, fragment!.id),
-    onSuccess: () => {
-      invalidate()
     },
   })
 
@@ -438,7 +423,6 @@ export function FragmentEditor({
       updatedAt: fragment?.updatedAt ?? '',
       order: fragment?.order ?? 0,
       meta: fragment?.meta ?? {},
-      archived: fragment?.archived ?? false,
     })
     : null
 
@@ -485,7 +469,7 @@ export function FragmentEditor({
               <TooltipContent side="bottom">Copy fragment to clipboard</TooltipContent>
             </Tooltip>
           )}
-          {fragment && !fragment.archived && mode !== 'create' && fragment.type !== 'prose' && fragment.type !== 'image' && fragment.type !== 'icon' && (
+          {fragment && mode !== 'create' && fragment.type !== 'prose' && fragment.type !== 'image' && fragment.type !== 'icon' && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -501,7 +485,7 @@ export function FragmentEditor({
               <TooltipContent side="bottom">Refine this fragment with Librarian</TooltipContent>
             </Tooltip>
           )}
-          {fragment && !fragment.archived && mode !== 'create' && fragment.type !== 'prose' && (
+          {fragment && mode !== 'create' && fragment.type !== 'prose' && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -554,7 +538,7 @@ export function FragmentEditor({
               <TooltipContent side="bottom">{fragment.placement === 'system' ? 'Placed in system context' : 'Placed in user context'}</TooltipContent>
             </Tooltip>
           )}
-          {fragment && !fragment.archived && mode !== 'create' && (
+          {fragment && mode !== 'create' && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -574,43 +558,6 @@ export function FragmentEditor({
               </TooltipTrigger>
               <TooltipContent side="bottom">Move to archive</TooltipContent>
             </Tooltip>
-          )}
-          {fragment && fragment.archived && mode !== 'create' && (
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => restoreMutation.mutate()}
-                    disabled={restoreMutation.isPending}
-                  >
-                    <Undo2 className="size-3" />
-                    Restore
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Restore from archive</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs gap-1 text-destructive/70 hover:text-destructive"
-                    onClick={() => {
-                      if (confirm('Permanently delete this fragment? This cannot be undone.')) {
-                        deleteMutation.mutate()
-                      }
-                    }}
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="size-3" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Permanently delete</TooltipContent>
-              </Tooltip>
-            </>
           )}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -848,7 +795,7 @@ export function FragmentEditor({
               )}
 
               <div className="flex items-center justify-between mt-1.5">
-                {fragment && !fragment.archived && mode !== 'create' && !isLocked && fragment.type !== 'prose' ? (
+                {fragment && mode !== 'create' && !isLocked && fragment.type !== 'prose' ? (
                   <button
                     type="button"
                     onClick={freezeSelection}

@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { getContentRoot } from '../fragments/branches'
+import { getInternalStoryPath } from '../md-files/paths'
 import { writeJsonAtomic } from '../fs-utils'
 
 // --- Types ---
@@ -51,8 +51,7 @@ export function generateConversationId(): string {
 // --- Path helpers ---
 
 async function characterChatDir(dataDir: string, storyId: string): Promise<string> {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, 'character-chat')
+  return getInternalStoryPath(dataDir, storyId, 'character-chat')
 }
 
 async function conversationsDir(dataDir: string, storyId: string): Promise<string> {

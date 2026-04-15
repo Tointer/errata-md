@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import type { Fragment, StoryMeta } from '@/lib/api'
+import { resolveBackendPath } from '@/lib/api/client'
 import type { SidebarSection } from './StorySidebar'
 import { getPluginPanel } from '@/lib/plugin-panels'
 import { FragmentList } from '@/components/fragments/FragmentList'
@@ -227,7 +228,7 @@ export function DetailPanel({
         ) : pluginPanel?.mode === 'iframe' && pluginPanel.url ? (
           <div className="h-full" data-component-id={componentId('plugin', pluginName, 'panel-root')}>
             <iframe
-              src={`${pluginPanel.url}?storyId=${encodeURIComponent(storyId)}`}
+              src={`${resolveBackendPath(pluginPanel.url)}?storyId=${encodeURIComponent(storyId)}`}
               title={`${pluginPanel.title} plugin panel`}
               className="h-full w-full border-0 bg-background"
               sandbox="allow-scripts allow-same-origin allow-forms"

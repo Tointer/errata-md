@@ -1,14 +1,12 @@
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { BlockConfigSchema } from './schema'
 import type { BlockConfig, CustomBlockDefinition, BlockOverride } from './schema'
-import { getContentRoot } from '../fragments/branches'
+import { getInternalStoryPath } from '../md-files/paths'
 import { writeJsonAtomic } from '../fs-utils'
 
 async function blockConfigPath(dataDir: string, storyId: string): Promise<string> {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, 'block-config.json')
+  return getInternalStoryPath(dataDir, storyId, 'block-config.json')
 }
 
 function emptyConfig(): BlockConfig {

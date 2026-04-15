@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { z } from 'zod/v4'
 import { BlockConfigSchema, type CustomBlockDefinition, type BlockOverride } from '../blocks/schema'
-import { getContentRoot } from '../fragments/branches'
+import { getInternalStoryPath } from '../md-files/paths'
 import { writeJsonAtomic } from '../fs-utils'
 
 export const AgentBlockConfigSchema = BlockConfigSchema.extend({
@@ -14,8 +14,7 @@ export const AgentBlockConfigSchema = BlockConfigSchema.extend({
 export type AgentBlockConfig = z.infer<typeof AgentBlockConfigSchema>
 
 async function agentBlockConfigPath(dataDir: string, storyId: string, agentName: string): Promise<string> {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, 'agent-blocks', `${agentName}.json`)
+  return getInternalStoryPath(dataDir, storyId, 'agent-blocks', `${agentName}.json`)
 }
 
 function emptyConfig(): AgentBlockConfig {

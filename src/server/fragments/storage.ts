@@ -1,11 +1,23 @@
-import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import type { Fragment, FragmentVersion, StoryMeta } from './schema'
-import { PREFIXES } from '@/lib/fragment-ids'
-import { getContentRoot, initBranches } from './branches'
+import { initBranches } from './branches'
 import { createLogger } from '../logging'
-import { writeJsonAtomic } from '../fs-utils'
+import { getInternalStoryRoot } from '../md-files/paths'
+import {
+  archiveFragmentMarkdown,
+  isMarkdownFragmentArchived,
+  loadMarkdownFragmentById,
+  loadMarkdownStoryMeta,
+  listArchivedMarkdownFragments,
+  listMarkdownFragments,
+  deleteFragmentMarkdown,
+  restoreFragmentMarkdown,
+  syncCompiledStoryFromCurrentChain,
+  syncFragmentMarkdown,
+  syncStoryMarkdownMeta,
+} from '../md-files'
 
 const requestLogger = createLogger('fragment-storage')
 
@@ -19,50 +31,28 @@ function storyDir(dataDir: string, storyId: string) {
   return join(storiesDir(dataDir), storyId)
 }
 
-function storyMetaPath(dataDir: string, storyId: string) {
+function storyMetaJsonPath(dataDir: string, storyId: string) {
   return join(storyDir(dataDir, storyId), 'meta.json')
 }
 
-async function fragmentsDir(dataDir: string, storyId: string) {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, 'fragments')
-}
-
-async function fragmentPath(dataDir: string, storyId: string, fragmentId: string) {
-  const dir = await fragmentsDir(dataDir, storyId)
+async function fragmentJsonPath(dataDir: string, storyId: string, fragmentId: string) {
+  const dir = join(getInternalStoryRoot(dataDir, storyId), 'fragments')
+  await mkdir(dir, { recursive: true })
   return join(dir, `${fragmentId}.json`)
 }
 
-// --- JSON read/write helpers ---
-
-async function readJson<T>(path: string): Promise<T | null> {
-  if (!existsSync(path)) return null
-  const raw = await readFile(path, 'utf-8')
-  return JSON.parse(raw) as T
-}
-
-async function writeJson(path: string, data: unknown): Promise<void> {
-  await writeJsonAtomic(path, data)
+async function removeFileIfExists(path: string): Promise<void> {
+  if (existsSync(path)) {
+    await rm(path, { force: true })
+  }
 }
 
 function normalizeFragment(fragment: Fragment | null): Fragment | null {
   if (!fragment) return null
   return {
     ...fragment,
-    archived: fragment.archived ?? false,
     version: fragment.version ?? 1,
     versions: Array.isArray(fragment.versions) ? fragment.versions : [],
-  }
-}
-
-function makeVersionSnapshot(fragment: Fragment, reason?: string): FragmentVersion {
-  return {
-    version: fragment.version ?? 1,
-    name: fragment.name,
-    description: fragment.description,
-    content: fragment.content,
-    createdAt: new Date().toISOString(),
-    ...(reason ? { reason } : {}),
   }
 }
 
@@ -75,14 +65,15 @@ export async function createStory(
   const dir = storyDir(dataDir, story.id)
   await mkdir(dir, { recursive: true })
   await initBranches(dataDir, story.id)
-  await writeJson(storyMetaPath(dataDir, story.id), story)
+  await syncStoryMarkdownMeta(dataDir, story)
+  await removeFileIfExists(storyMetaJsonPath(dataDir, story.id))
 }
 
 export async function getStory(
   dataDir: string,
   storyId: string
 ): Promise<StoryMeta | null> {
-  return readJson<StoryMeta>(storyMetaPath(dataDir, storyId))
+  return loadMarkdownStoryMeta(dataDir, storyId)
 }
 
 export async function listStories(dataDir: string): Promise<StoryMeta[]> {
@@ -106,7 +97,8 @@ export async function updateStory(
   dataDir: string,
   story: StoryMeta
 ): Promise<void> {
-  await writeJson(storyMetaPath(dataDir, story.id), story)
+  await syncStoryMarkdownMeta(dataDir, story)
+  await removeFileIfExists(storyMetaJsonPath(dataDir, story.id))
 }
 
 export async function deleteStory(
@@ -126,10 +118,14 @@ export async function createFragment(
   storyId: string,
   fragment: Fragment
 ): Promise<void> {
-  const dir = await fragmentsDir(dataDir, storyId)
-  await mkdir(dir, { recursive: true })
   const normalized = normalizeFragment(fragment)
-  await writeJson(await fragmentPath(dataDir, storyId, fragment.id), normalized)
+  if (normalized) {
+    await syncFragmentMarkdown(dataDir, storyId, normalized)
+    await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, normalized.id))
+    if (normalized.type === 'prose' || normalized.type === 'marker') {
+      await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+    }
+  }
 }
 
 export async function getFragment(
@@ -137,41 +133,31 @@ export async function getFragment(
   storyId: string,
   fragmentId: string
 ): Promise<Fragment | null> {
-  const fragment = await readJson<Fragment>(await fragmentPath(dataDir, storyId, fragmentId))
-  return normalizeFragment(fragment)
+  return normalizeFragment(await loadMarkdownFragmentById(dataDir, storyId, fragmentId))
 }
 
 export async function listFragments(
   dataDir: string,
   storyId: string,
   type?: string,
-  opts?: { includeArchived?: boolean }
 ): Promise<Fragment[]> {
-  const dir = await fragmentsDir(dataDir, storyId)
-  if (!existsSync(dir)) return []
+  return listMarkdownFragments(dataDir, storyId, type)
+}
 
-  const includeArchived = opts?.includeArchived ?? false
-  const entries = await readdir(dir)
-  const fragments: Fragment[] = []
+export async function listArchivedFragments(
+  dataDir: string,
+  storyId: string,
+  type?: string,
+): Promise<Fragment[]> {
+  return listArchivedMarkdownFragments(dataDir, storyId, type)
+}
 
-  // Determine prefix filter
-  const prefix = type ? (PREFIXES[type] ?? type.slice(0, 2)) : null
-
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
-    const id = entry.replace('.json', '')
-    if (prefix && !id.startsWith(prefix + '-')) continue
-
-    const rawFragment = await readJson<Fragment>(join(dir, entry))
-    const fragment = normalizeFragment(rawFragment)
-    if (fragment) {
-      // Skip archived fragments unless caller opts in
-      if (!includeArchived && fragment.archived) continue
-      fragments.push(fragment)
-    }
-  }
-
-  return fragments
+export async function isFragmentArchived(
+  dataDir: string,
+  storyId: string,
+  fragmentId: string
+): Promise<boolean> {
+  return isMarkdownFragmentArchived(dataDir, storyId, fragmentId)
 }
 
 export async function archiveFragment(
@@ -181,13 +167,13 @@ export async function archiveFragment(
 ): Promise<Fragment | null> {
   const fragment = await getFragment(dataDir, storyId, fragmentId)
   if (!fragment) return null
-  const updated: Fragment = {
-    ...fragment,
-    archived: true,
-    updatedAt: new Date().toISOString(),
+  const moved = await archiveFragmentMarkdown(dataDir, storyId, fragmentId)
+  if (!moved) return null
+  await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, fragmentId))
+  if (fragment.type === 'prose' || fragment.type === 'marker') {
+    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
   }
-  await writeJson(await fragmentPath(dataDir, storyId, fragmentId), updated)
-  return updated
+  return fragment
 }
 
 export async function restoreFragment(
@@ -197,13 +183,13 @@ export async function restoreFragment(
 ): Promise<Fragment | null> {
   const fragment = await getFragment(dataDir, storyId, fragmentId)
   if (!fragment) return null
-  const updated: Fragment = {
-    ...fragment,
-    archived: false,
-    updatedAt: new Date().toISOString(),
+  const moved = await restoreFragmentMarkdown(dataDir, storyId, fragmentId)
+  if (!moved) return null
+  await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, fragmentId))
+  if (fragment.type === 'prose' || fragment.type === 'marker') {
+    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
   }
-  await writeJson(await fragmentPath(dataDir, storyId, fragmentId), updated)
-  return updated
+  return fragment
 }
 
 export async function updateFragment(
@@ -212,9 +198,14 @@ export async function updateFragment(
   fragment: Fragment
 ): Promise<void> {
   const normalized = normalizeFragment(fragment)
-  const path = await fragmentPath(dataDir, storyId, fragment.id)
-  requestLogger.info('Updating fragment', { path })
-  await writeJson(path, normalized)
+  if (normalized) {
+    requestLogger.info('Updating fragment markdown', { fragmentId: normalized.id, storyId })
+    await syncFragmentMarkdown(dataDir, storyId, normalized)
+    await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, normalized.id))
+    if (normalized.type === 'prose' || normalized.type === 'marker') {
+      await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+    }
+  }
 }
 
 export async function updateFragmentVersioned(
@@ -224,35 +215,24 @@ export async function updateFragmentVersioned(
   updates: Partial<Pick<Fragment, 'name' | 'description' | 'content'>>,
   opts?: { reason?: string }
 ): Promise<Fragment | null> {
+  void opts
   const existing = await getFragment(dataDir, storyId, fragmentId)
   if (!existing) return null
 
   const nextName = updates.name ?? existing.name
   const nextDescription = updates.description ?? existing.description
   const nextContent = updates.content ?? existing.content
-  const hasVersionedChange =
-    nextName !== existing.name ||
-    nextDescription !== existing.description ||
-    nextContent !== existing.content
 
   const now = new Date().toISOString()
-  const updated: Fragment = hasVersionedChange
-    ? {
-        ...existing,
-        name: nextName,
-        description: nextDescription,
-        content: nextContent,
-        updatedAt: now,
-        version: (existing.version ?? 1) + 1,
-        versions: [...(existing.versions ?? []), makeVersionSnapshot(existing, opts?.reason)],
-      }
-    : {
-        ...existing,
-        name: nextName,
-        description: nextDescription,
-        content: nextContent,
-        updatedAt: now,
-      }
+  const updated: Fragment = {
+    ...existing,
+    name: nextName,
+    description: nextDescription,
+    content: nextContent,
+    updatedAt: now,
+    version: 1,
+    versions: [],
+  }
 
   await updateFragment(dataDir, storyId, updated)
   return updated
@@ -265,7 +245,7 @@ export async function listFragmentVersions(
 ): Promise<FragmentVersion[] | null> {
   const fragment = await getFragment(dataDir, storyId, fragmentId)
   if (!fragment) return null
-  return [...(fragment.versions ?? [])]
+  return []
 }
 
 export async function revertFragmentToVersion(
@@ -274,34 +254,11 @@ export async function revertFragmentToVersion(
   fragmentId: string,
   targetVersion?: number
 ): Promise<Fragment | null> {
-  const fragment = await getFragment(dataDir, storyId, fragmentId)
-  if (!fragment) return null
-
-  const versions = fragment.versions ?? []
-  const snapshot = targetVersion === undefined
-    ? versions.at(-1)
-    : versions.find((v) => v.version === targetVersion)
-  if (!snapshot) return null
-
-  const now = new Date().toISOString()
-  const nextVersion = (fragment.version ?? 1) + 1
-  const updated: Fragment = {
-    ...fragment,
-    name: snapshot.name,
-    description: snapshot.description,
-    content: snapshot.content,
-    updatedAt: now,
-    version: nextVersion,
-    versions: [
-      ...versions,
-      makeVersionSnapshot(fragment, targetVersion === undefined
-        ? `revert-to-${snapshot.version}`
-        : `revert-to-${targetVersion}`),
-    ],
-  }
-
-  await updateFragment(dataDir, storyId, updated)
-  return updated
+  void dataDir
+  void storyId
+  void fragmentId
+  void targetVersion
+  return null
 }
 
 export async function deleteFragment(
@@ -309,8 +266,10 @@ export async function deleteFragment(
   storyId: string,
   fragmentId: string
 ): Promise<void> {
-  const path = await fragmentPath(dataDir, storyId, fragmentId)
-  if (existsSync(path)) {
-    await rm(path)
+  const existing = await getFragment(dataDir, storyId, fragmentId)
+  await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, fragmentId))
+  await deleteFragmentMarkdown(dataDir, storyId, fragmentId)
+  if (existing && (existing.type === 'prose' || existing.type === 'marker')) {
+    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
   }
 }

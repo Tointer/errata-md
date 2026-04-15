@@ -1,6 +1,6 @@
 import { z } from 'zod/v4'
 
-export const FragmentIdSchema = z.string().regex(/^[a-z]{2,4}-[a-z0-9]{4,12}$/)
+export const FragmentIdSchema = z.string().regex(/^[a-z]{2,4}-[a-z0-9]+(?:-[a-z0-9]+)*$/)
 
 export const FRAGMENT_TYPES = ['prose', 'character', 'guideline', 'knowledge', 'image', 'icon', 'marker'] as const
 
@@ -22,7 +22,6 @@ export const FragmentSchema = z.object({
   updatedAt: z.iso.datetime(),
   order: z.int().default(0),
   meta: z.record(z.string(), z.unknown()).default({}),
-  archived: z.boolean().default(false),
   version: z.int().min(1).default(1),
   versions: z.array(z.object({
     version: z.int().min(1),
@@ -57,7 +56,6 @@ export interface Fragment {
   updatedAt: string
   order: number
   meta: Record<string, unknown>
-  archived?: boolean
   version?: number
   versions?: FragmentVersion[]
 }

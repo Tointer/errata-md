@@ -3,11 +3,14 @@ import { join, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { zipSync, unzipSync } from 'fflate'
 import { generateFragmentId } from '@/lib/fragment-ids'
-import { createStory } from './fragments/storage'
+import { createStory, getStory } from './fragments/storage'
 import { saveProseChain } from './fragments/prose-chain'
 import { saveAssociations } from './fragments/associations'
 import { getBranchesIndex, getContentRoot } from './fragments/branches'
 import type { StoryMeta, Fragment, Associations, ProseChain, BranchesIndex } from './fragments/schema'
+import { parseFrontmatter } from './md-files/frontmatter'
+import { getInternalStoryRoot } from './md-files/paths'
+import { storyMetaFromMarkdown } from './md-files/story-meta'
 
 export interface ExportResult {
   buffer: Uint8Array
@@ -62,14 +65,9 @@ export async function exportStoryAsZip(
 
   // Read meta for filename
   let storyName = storyId
-  const metaPath = join(storyDir, 'meta.json')
-  if (existsSync(metaPath)) {
-    try {
-      const meta = JSON.parse(await readFile(metaPath, 'utf-8')) as StoryMeta
-      storyName = meta.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50)
-    } catch {
-      // fallback to storyId
-    }
+  const story = await getStory(dataDir, storyId)
+  if (story) {
+    storyName = story.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50)
   }
 
   return {
@@ -89,12 +87,7 @@ export async function importStoryFromZip(
   const paths = Object.keys(extracted)
   const decoder = new TextDecoder()
 
-  // Read meta.json (at export root, not inside branches/ or fragments/)
-  const metaKey = paths.find((p) => p.endsWith('meta.json') && !p.includes('fragments/') && !p.includes('branches/'))
-  if (!metaKey) {
-    throw new Error('Invalid archive: missing meta.json')
-  }
-  const originalMeta = JSON.parse(decoder.decode(extracted[metaKey])) as StoryMeta
+  const originalMeta = readStoryMetaFromArchive(paths, extracted, decoder)
 
   // Generate new story ID
   const newStoryId = `story-${Date.now().toString(36)}`
@@ -222,7 +215,8 @@ async function importLegacyFormat(
 
   // Write fragments to the active branch (main)
   const root = await getContentRoot(dataDir, storyId)
-  const fragmentsDir = join(root, 'fragments')
+  const internalRoot = getInternalStoryRoot(dataDir, storyId)
+  const fragmentsDir = join(internalRoot, 'fragments')
   await mkdir(fragmentsDir, { recursive: true })
   for (const fragment of remappedFragments) {
     await writeFile(
@@ -258,7 +252,7 @@ async function importLegacyFormat(
     if (!path.includes('generation-logs/') || !path.endsWith('.json')) continue
     if (path.includes('/branches/')) continue
     handledLegacy.add(path)
-    const logsDir = join(root, 'generation-logs')
+    const logsDir = join(internalRoot, 'generation-logs')
     await mkdir(logsDir, { recursive: true })
     const filename = path.split('/').pop()!
     const logData = JSON.parse(decoder.decode(content))
@@ -280,10 +274,55 @@ async function importLegacyFormat(
     if (relativePath.startsWith('fragments/')) continue
     if (relativePath === 'prose-chain.json' || relativePath === 'associations.json') continue
     if (handledLegacy.has(path)) continue
-    const targetPath = join(root, relativePath)
+    const targetPath = join(root, normalizeLegacyStoryRelativePath(relativePath))
     await mkdir(dirname(targetPath), { recursive: true })
     await writeFile(targetPath, content)
   }
+}
+
+function readStoryMetaFromArchive(
+  paths: string[],
+  extracted: Record<string, Uint8Array>,
+  decoder: TextDecoder,
+): StoryMeta {
+  const metaKey = paths.find((p) => p.endsWith('meta.json') && !p.includes('fragments/') && !p.includes('branches/'))
+  if (metaKey) {
+    return JSON.parse(decoder.decode(extracted[metaKey])) as StoryMeta
+  }
+
+  const storyMetaKey = paths.find((p) => {
+    if (p.includes('/branches/')) return false
+    return p.endsWith('/.errata/_story.md') || p.endsWith('/_story.md')
+  })
+  if (!storyMetaKey) {
+    throw new Error('Invalid archive: missing story metadata')
+  }
+
+  const parsed = parseFrontmatter(decoder.decode(extracted[storyMetaKey]))
+  const story = storyMetaFromMarkdown(parsed.attributes, parsed.body)
+  if (!story) {
+    throw new Error('Invalid archive: could not parse story metadata')
+  }
+  return story
+}
+
+function normalizeLegacyStoryRelativePath(relativePath: string): string {
+  if (
+    relativePath === '_story.md'
+    || relativePath === 'block-config.json'
+    || relativePath === 'token-usage.json'
+    || relativePath.startsWith('agent-blocks/')
+    || relativePath.startsWith('character-chat/')
+    || relativePath.startsWith('Fragments/')
+    || relativePath.startsWith('Icons/')
+    || relativePath.startsWith('Images/')
+    || relativePath.startsWith('Markers/')
+    || relativePath.startsWith('librarian/')
+  ) {
+    return join('.errata', relativePath)
+  }
+
+  return relativePath
 }
 
 // --- Branch content helpers ---

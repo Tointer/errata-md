@@ -160,6 +160,20 @@ describe('Fragment API routes', () => {
     expect(data[0].type).toBe('prose')
   })
 
+  it('creates filename-derived ids for visible fragment types', async () => {
+    const res = await apiJson(`/stories/${storyId}/fragments`, {
+      type: 'character',
+      name: 'Io Dren',
+      description: 'Station archivist',
+      content: 'Keeps the night archive in order.',
+    })
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.id).toBe('ch-io-dren')
+    expect(data.name).toBe('Io Dren')
+  })
+
   it('GET /api/stories/:sid/fragments/:fid gets a fragment', async () => {
     const created = await (
       await apiJson(`/stories/${storyId}/fragments`, fragment)
@@ -237,7 +251,7 @@ describe('Fragment API routes', () => {
       method: 'DELETE',
     })
     expect(res.status).toBe(200)
-    const listRes = await api(`/stories/${storyId}/fragments?includeArchived=true`)
+    const listRes = await api(`/stories/${storyId}/fragments/archived`)
     const data = await listRes.json()
     expect(data).toHaveLength(0)
   })
@@ -250,17 +264,15 @@ describe('Fragment API routes', () => {
       method: 'POST',
     })
     expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.archived).toBe(true)
     // Fragment should not appear in normal list
     const listRes = await api(`/stories/${storyId}/fragments`)
     const listData = await listRes.json()
     expect(listData).toHaveLength(0)
-    // But should appear with includeArchived
-    const archivedRes = await api(`/stories/${storyId}/fragments?includeArchived=true`)
+    // But should appear in archived listing
+    const archivedRes = await api(`/stories/${storyId}/fragments/archived`)
     const archivedData = await archivedRes.json()
     expect(archivedData).toHaveLength(1)
-    expect(archivedData[0].archived).toBe(true)
+    expect(archivedData[0].id).toBe(created.id)
   })
 
   it('POST /api/stories/:sid/fragments/:fid/restore restores a fragment', async () => {
@@ -271,15 +283,13 @@ describe('Fragment API routes', () => {
     await api(`/stories/${storyId}/fragments/${created.id}/archive`, { method: 'POST' })
     const res = await api(`/stories/${storyId}/fragments/${created.id}/restore`, { method: 'POST' })
     expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.archived).toBe(false)
     // Should appear in normal list again
     const listRes = await api(`/stories/${storyId}/fragments`)
     const listData = await listRes.json()
     expect(listData).toHaveLength(1)
   })
 
-  it('GET /api/stories/:sid/fragments/:fid/versions lists version snapshots', async () => {
+  it('GET /api/stories/:sid/fragments/:fid/versions reports removed feature', async () => {
     const created = await (
       await apiJson(`/stories/${storyId}/fragments`, {
         type: 'character',
@@ -300,14 +310,12 @@ describe('Fragment API routes', () => {
     )
 
     const versionsRes = await api(`/stories/${storyId}/fragments/${created.id}/versions`)
-    expect(versionsRes.status).toBe(200)
+    expect(versionsRes.status).toBe(410)
     const body = await versionsRes.json()
-    expect(body.versions).toHaveLength(1)
-    expect(body.versions[0].version).toBe(1)
-    expect(body.versions[0].content).toBe('v1 content')
+    expect(body.error).toContain('removed')
   })
 
-  it('POST /api/stories/:sid/fragments/:fid/versions/:version/revert restores the selected version', async () => {
+  it('POST /api/stories/:sid/fragments/:fid/versions/:version/revert reports removed feature', async () => {
     const created = await (
       await apiJson(`/stories/${storyId}/fragments`, {
         type: 'knowledge',
@@ -340,11 +348,9 @@ describe('Fragment API routes', () => {
     const revertRes = await api(`/stories/${storyId}/fragments/${created.id}/versions/1/revert`, {
       method: 'POST',
     })
-    expect(revertRes.status).toBe(200)
+    expect(revertRes.status).toBe(410)
     const reverted = await revertRes.json()
-    expect(reverted.id).toBe(created.id)
-    expect(reverted.content).toBe('v1 content')
-    expect(reverted.version).toBe(4)
+    expect(reverted.error).toContain('removed')
   })
 })
 

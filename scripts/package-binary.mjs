@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
 
@@ -32,7 +32,7 @@ async function findLatestBinary() {
     .map((entry) => join(distDir, entry.name))
 
   if (candidates.length === 0) {
-    throw new Error('No binary found in dist/. Run "bun run build:binary" first.')
+    throw new Error('No binary found in dist/. Standalone binary builds are currently disabled during the Node migration.')
   }
 
   let latestPath = candidates[0]
@@ -87,7 +87,7 @@ async function main() {
 
   const zipData = zipSync(filesForZip, { level: 9 })
   const zipPath = join(distDir, `errata-${version}-bundle.zip`)
-  await Bun.write(zipPath, zipData)
+  await writeFile(zipPath, zipData)
 
   console.log(`Packaged ${binaryName} + public/* -> ${zipPath}`)
 }

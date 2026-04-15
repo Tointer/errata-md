@@ -15,7 +15,7 @@ describe('FragmentIdSchema', () => {
   })
 
   it('rejects invalid fragment IDs', () => {
-    const invalid = ['', 'prose-abc', 'PR-A1B2', 'pr_a1b2', 'p-abc', 'pr-ab', 'pr-ABC!']
+    const invalid = ['', 'prose-abc', 'PR-A1B2', 'pr_a1b2', 'p-abc', 'pr--ab', 'pr-ABC!']
     for (const id of invalid) {
       expect(() => FragmentIdSchema.parse(id)).toThrow()
     }
@@ -61,7 +61,6 @@ describe('FragmentSchema', () => {
     expect(result.sticky).toBe(false)
     expect(result.order).toBe(0)
     expect(result.meta).toEqual({})
-    expect(result.archived).toBe(false)
     expect(result.version).toBe(1)
     expect(result.versions).toEqual([])
   })

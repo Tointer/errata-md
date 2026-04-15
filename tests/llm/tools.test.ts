@@ -120,7 +120,7 @@ describe('LLM tools', () => {
       )
 
       expect(result.ok).toBe(true)
-      expect(result.id).toMatch(/^kn-/)
+      expect(result.id).toBe('kn-moon-ritual')
 
       const created = await getFragment(dataDir, storyId, result.id)
       expect(created).toBeTruthy()
@@ -284,9 +284,8 @@ describe('LLM tools', () => {
       const updated = await getFragment(dataDir, storyId, 'pr-0001')
       expect(updated!.content).toBe('New content')
       expect(updated!.description).toBe('New desc')
-      expect(updated!.version).toBe(2)
-      expect(updated!.versions).toHaveLength(1)
-      expect(updated!.versions?.[0].content).toBe('Old content')
+      expect(updated!.version).toBe(1)
+      expect(updated!.versions).toHaveLength(0)
     })
   })
 
@@ -312,9 +311,8 @@ describe('LLM tools', () => {
 
       const updated = await getFragment(dataDir, storyId, 'pr-0001')
       expect(updated!.content).toBe('The dog sat on the mat.')
-      expect(updated!.version).toBe(2)
-      expect(updated!.versions).toHaveLength(1)
-      expect(updated!.versions?.[0].content).toBe('The cat sat on the mat.')
+      expect(updated!.version).toBe(1)
+      expect(updated!.versions).toHaveLength(0)
     })
 
     it('returns error when oldText not found', async () => {

@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { createTempDir, makeTestSettings } from '../setup'
 import {
   createStory,
@@ -13,9 +16,8 @@ import {
   updateFragmentVersioned,
   deleteFragment,
   archiveFragment,
+  listArchivedFragments,
   restoreFragment,
-  listFragmentVersions,
-  revertFragmentToVersion,
 } from '@/server/fragments/storage'
 import type { Fragment, StoryMeta } from '@/server/fragments/schema'
 
@@ -98,6 +100,19 @@ describe('Story CRUD', () => {
     const result = await getStory(dataDir, 'nonexistent')
     expect(result).toBeNull()
   })
+
+  it('persists story metadata without writing meta.json', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    expect(existsSync(join(dataDir, 'stories', story.id, 'meta.json'))).toBe(false)
+
+    const retrieved = await getStory(dataDir, story.id)
+    expect(retrieved).not.toBeNull()
+    expect(retrieved!.id).toBe(story.id)
+    expect(retrieved!.name).toBe(story.name)
+    expect(retrieved!.description).toBe(story.description)
+  })
 })
 
 describe('Fragment CRUD', () => {
@@ -113,7 +128,6 @@ describe('Fragment CRUD', () => {
     const retrieved = await getFragment(dataDir, storyId, fragment.id)
     expect(retrieved).toEqual({
       ...fragment,
-      archived: false,
       version: 1,
       versions: [],
     })
@@ -159,9 +173,9 @@ describe('Fragment CRUD', () => {
     expect(retrieved!.content).toBe('New content here.')
   })
 
-  it('creates a version snapshot when versioned content update runs', async () => {
+  it('updates content without storing native version history', async () => {
     const fragment = makeFragment({
-      id: 'ch-1000',
+      id: 'ch-alice',
       type: 'character',
       name: 'Alice',
       description: 'Original desc',
@@ -172,22 +186,21 @@ describe('Fragment CRUD', () => {
     const updated = await updateFragmentVersioned(
       dataDir,
       storyId,
-      'ch-1000',
+      'ch-alice',
       { content: 'Updated content', description: 'Updated desc' },
       { reason: 'test-refine' },
     )
 
     expect(updated).not.toBeNull()
-    expect(updated!.version).toBe(2)
-    expect(updated!.versions).toHaveLength(1)
-    expect(updated!.versions![0].version).toBe(1)
-    expect(updated!.versions![0].content).toBe('Original content')
-    expect(updated!.versions![0].reason).toBe('test-refine')
+    expect(updated!.version).toBe(1)
+    expect(updated!.versions).toEqual([])
+    expect(updated!.content).toBe('Updated content')
+    expect(updated!.description).toBe('Updated desc')
   })
 
-  it('lists versions and can revert to a specific version', async () => {
+  it('does not expose built-in version history anymore', async () => {
     const fragment = makeFragment({
-      id: 'gl-2000',
+      id: 'gl-tone',
       type: 'guideline',
       name: 'Tone',
       description: 'v1 desc',
@@ -195,22 +208,14 @@ describe('Fragment CRUD', () => {
     })
     await createFragment(dataDir, storyId, fragment)
 
-    await updateFragmentVersioned(dataDir, storyId, 'gl-2000', { content: 'v2 content', description: 'v2 desc' })
-    await updateFragmentVersioned(dataDir, storyId, 'gl-2000', { content: 'v3 content', description: 'v3 desc' })
+    await updateFragmentVersioned(dataDir, storyId, 'gl-tone', { content: 'v2 content', description: 'v2 desc' })
+    await updateFragmentVersioned(dataDir, storyId, 'gl-tone', { content: 'v3 content', description: 'v3 desc' })
 
-    const versions = await listFragmentVersions(dataDir, storyId, 'gl-2000')
-    expect(versions).not.toBeNull()
-    expect(versions).toHaveLength(2)
-    expect(versions![0].version).toBe(1)
-    expect(versions![1].version).toBe(2)
-
-    const reverted = await revertFragmentToVersion(dataDir, storyId, 'gl-2000', 1)
-    expect(reverted).not.toBeNull()
-    expect(reverted!.id).toBe('gl-2000')
-    expect(reverted!.content).toBe('v1 content')
-    expect(reverted!.description).toBe('v1 desc')
-    expect(reverted!.version).toBe(4)
-    expect(reverted!.versions).toHaveLength(3)
+    const retrieved = await getFragment(dataDir, storyId, 'gl-tone')
+    expect(retrieved).not.toBeNull()
+    expect(retrieved!.content).toBe('v3 content')
+    expect(retrieved!.version).toBe(1)
+    expect(retrieved!.versions).toEqual([])
   })
 
   it('deletes a fragment', async () => {
@@ -225,6 +230,135 @@ describe('Fragment CRUD', () => {
     const result = await getFragment(dataDir, storyId, 'pr-zzzz')
     expect(result).toBeNull()
   })
+
+  it('persists fragment data without writing json sidecars', async () => {
+    const fragment = makeFragment({ id: 'pr-mdonly' })
+    await createFragment(dataDir, storyId, fragment)
+
+    expect(existsSync(join(dataDir, 'stories', storyId, 'fragments', `${fragment.id}.json`))).toBe(false)
+
+    const retrieved = await getFragment(dataDir, storyId, fragment.id)
+    expect(retrieved).not.toBeNull()
+    expect(retrieved!.id).toBe(fragment.id)
+    expect(retrieved!.content).toBe(fragment.content)
+    expect(retrieved!.version).toBe(1)
+  })
+
+  it('stores only generatedFrom and summary in prose markdown frontmatter', async () => {
+    const fragment = makeFragment({
+      id: 'pr-minmeta',
+      name: 'Hidden prose title',
+      description: 'Internal prose description',
+      tags: ['scene'],
+      refs: ['ch-mirea'],
+      meta: {
+        generatedFrom: 'Continue the scene after the blackout.',
+        _librarian: {
+          summary: 'Mirea is forced toward the tunnel exit.',
+          analysisId: 'la-1234',
+        },
+        annotations: [{ type: 'mention', fragmentId: 'ch-mirea', text: 'Mirea' }],
+        locked: true,
+      },
+    })
+
+    await createFragment(dataDir, storyId, fragment)
+
+    const markdownPath = join(dataDir, 'stories', storyId, 'Prose', '0000-pr-minmeta.md')
+    const rawMarkdown = await readFile(markdownPath, 'utf-8')
+
+    expect(rawMarkdown).toContain('generatedFrom: "Continue the scene after the blackout."')
+    expect(rawMarkdown).toContain('summary: "Mirea is forced toward the tunnel exit."')
+    expect(rawMarkdown).not.toContain('analysisId')
+    expect(rawMarkdown).not.toContain('annotations')
+    expect(rawMarkdown).not.toContain('name:')
+    expect(rawMarkdown).not.toContain('description:')
+
+    const internalPath = join(dataDir, 'stories', storyId, '.errata', 'fragment-internals.json')
+    expect(existsSync(internalPath)).toBe(true)
+
+    const internalRaw = await readFile(internalPath, 'utf-8')
+    expect(internalRaw).toContain('analysisId')
+    expect(internalRaw).toContain('annotations')
+    expect(internalRaw).toContain('Hidden prose title')
+    expect(internalRaw).toContain('"createdAt"')
+    expect(internalRaw).toContain('"updatedAt"')
+    expect(internalRaw).not.toContain('generatedFrom')
+
+    const retrieved = await getFragment(dataDir, storyId, fragment.id)
+    expect(retrieved).not.toBeNull()
+    expect(retrieved!.name).toBe('Hidden prose title')
+    expect(retrieved!.description).toBe('Internal prose description')
+    expect(retrieved!.meta.generatedFrom).toBe('Continue the scene after the blackout.')
+    expect((retrieved!.meta._librarian as { summary: string; analysisId: string }).summary).toBe('Mirea is forced toward the tunnel exit.')
+    expect((retrieved!.meta._librarian as { summary: string; analysisId: string }).analysisId).toBe('la-1234')
+    expect(retrieved!.meta.locked).toBe(true)
+  })
+
+  it('stores visible fragment timestamps in shared internal metadata instead of markdown', async () => {
+    const fragment = makeFragment({
+      id: 'gl-scene-discipline',
+      type: 'guideline',
+      name: 'Scene Discipline',
+      description: 'Scene pacing rules',
+      content: 'Keep scenes tight.',
+      sticky: true,
+      placement: 'system',
+    })
+
+    await createFragment(dataDir, storyId, fragment)
+
+    const markdownPath = join(dataDir, 'stories', storyId, 'Guidelines', 'Scene Discipline.md')
+    const rawMarkdown = await readFile(markdownPath, 'utf-8')
+    expect(rawMarkdown).not.toContain('createdAt:')
+    expect(rawMarkdown).not.toContain('updatedAt:')
+
+    const internalPath = join(dataDir, 'stories', storyId, '.errata', 'fragment-internals.json')
+    const internalRaw = await readFile(internalPath, 'utf-8')
+    expect(internalRaw).toContain('"gl-scene-discipline"')
+    expect(internalRaw).toContain('"createdAt": "2026-01-01T00:00:00.000Z"')
+    expect(internalRaw).toContain('"updatedAt": "2026-01-01T00:00:00.000Z"')
+
+    const retrieved = await getFragment(dataDir, storyId, fragment.id)
+    expect(retrieved?.createdAt).toBe('2026-01-01T00:00:00.000Z')
+    expect(retrieved?.updatedAt).toBe('2026-01-01T00:00:00.000Z')
+  })
+
+  it('lists fragments directly from markdown storage', async () => {
+    const prose = makeFragment({ id: 'pr-mdlist' })
+    const character = makeFragment({
+      id: 'ch-asha',
+      type: 'character',
+      name: 'Asha',
+      description: 'Pilot',
+      content: 'Asha carries the map fragments.',
+    })
+
+    await createFragment(dataDir, storyId, prose)
+    await createFragment(dataDir, storyId, character)
+
+    const listed = await listFragments(dataDir, storyId)
+    expect(listed).toHaveLength(2)
+    expect(listed.map((fragment) => fragment.id).sort()).toEqual(['ch-asha', 'pr-mdlist'])
+  })
+
+  it('prefers markdown content over stale json sidecars', async () => {
+    const fragment = makeFragment({ id: 'pr-mdwins', content: 'Old JSON content.' })
+    await createFragment(dataDir, storyId, fragment)
+
+    const markdownPath = join(dataDir, 'stories', storyId, 'Prose', '0000-pr-mdwins.md')
+    const original = await readFile(markdownPath, 'utf-8')
+    const updated = original.replace('Old JSON content.', 'Fresh markdown content.')
+    await writeFile(markdownPath, updated, 'utf-8')
+
+    const retrieved = await getFragment(dataDir, storyId, fragment.id)
+    expect(retrieved).not.toBeNull()
+    expect(retrieved!.content).toBe('Fresh markdown content.')
+
+    const listed = await listFragments(dataDir, storyId, 'prose')
+    const sameFragment = listed.find((item) => item.id === fragment.id)
+    expect(sameFragment?.content).toBe('Fresh markdown content.')
+  })
 })
 
 describe('Fragment Archive', () => {
@@ -234,18 +368,21 @@ describe('Fragment Archive', () => {
     await createStory(dataDir, makeStory({ id: storyId }))
   })
 
-  it('archiveFragment sets archived to true', async () => {
+  it('archiveFragment moves a fragment into the archive listing', async () => {
     await createFragment(dataDir, storyId, makeFragment({ id: 'ch-test' }))
     const result = await archiveFragment(dataDir, storyId, 'ch-test')
     expect(result).not.toBeNull()
-    expect(result!.archived).toBe(true)
+    expect(await listFragments(dataDir, storyId)).toHaveLength(0)
+    expect((await listArchivedFragments(dataDir, storyId)).map((fragment) => fragment.id)).toEqual(['ch-test'])
   })
 
-  it('restoreFragment sets archived to false', async () => {
-    await createFragment(dataDir, storyId, makeFragment({ id: 'ch-test', archived: true }))
+  it('restoreFragment returns a fragment to the visible listing', async () => {
+    await createFragment(dataDir, storyId, makeFragment({ id: 'ch-test' }))
+    await archiveFragment(dataDir, storyId, 'ch-test')
     const result = await restoreFragment(dataDir, storyId, 'ch-test')
     expect(result).not.toBeNull()
-    expect(result!.archived).toBe(false)
+    expect((await listFragments(dataDir, storyId)).map((fragment) => fragment.id)).toEqual(['ch-test'])
+    expect(await listArchivedFragments(dataDir, storyId)).toHaveLength(0)
   })
 
   it('archiveFragment returns null for non-existent fragment', async () => {
@@ -263,23 +400,13 @@ describe('Fragment Archive', () => {
     expect(fragments[0].id).toBe('ch-aaaa')
   })
 
-  it('listFragments includes archived fragments when opted in', async () => {
+  it('listArchivedFragments returns only moved fragments', async () => {
     await createFragment(dataDir, storyId, makeFragment({ id: 'ch-aaaa' }))
     await createFragment(dataDir, storyId, makeFragment({ id: 'ch-bbbb' }))
     await archiveFragment(dataDir, storyId, 'ch-bbbb')
 
-    const fragments = await listFragments(dataDir, storyId, undefined, { includeArchived: true })
-    expect(fragments).toHaveLength(2)
-  })
-
-  it('defaults archived to false for legacy fragments without the field', async () => {
-    // Create a fragment without the archived field (simulating legacy data)
-    const legacy = makeFragment({ id: 'pr-lega' })
-    delete (legacy as unknown as Record<string, unknown>).archived
-    await createFragment(dataDir, storyId, legacy)
-
-    const fragments = await listFragments(dataDir, storyId)
+    const fragments = await listArchivedFragments(dataDir, storyId)
     expect(fragments).toHaveLength(1)
-    expect(fragments[0].archived).toBe(false)
+    expect(fragments[0].id).toBe('ch-bbbb')
   })
 })

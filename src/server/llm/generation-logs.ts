@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { getContentRoot } from '../fragments/branches'
+import { getInternalStoryPath } from '../md-files/paths'
 import { writeJsonAtomic } from '../fs-utils'
 
 export interface ToolCallLog {
@@ -52,8 +52,7 @@ export interface GenerationLogSummary {
 }
 
 async function logsDir(dataDir: string, storyId: string): Promise<string> {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, 'generation-logs')
+  return getInternalStoryPath(dataDir, storyId, 'generation-logs')
 }
 
 async function logPath(dataDir: string, storyId: string, logId: string): Promise<string> {

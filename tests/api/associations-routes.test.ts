@@ -196,30 +196,30 @@ describe('association & sticky API routes', () => {
 
   describe('sticky', () => {
     it('PATCH toggles sticky on a fragment', async () => {
-      await createFragment(dataDir, storyId, makeFragment({ id: 'gl-0001', type: 'guideline', sticky: false }))
+      await createFragment(dataDir, storyId, makeFragment({ id: 'gl-tone-guide', type: 'guideline', name: 'Tone Guide', sticky: false }))
 
-      const res = await api(`/stories/${storyId}/fragments/gl-0001/sticky`, {
+      const res = await api(`/stories/${storyId}/fragments/gl-tone-guide/sticky`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sticky: true }),
       })
       expect(res.status).toBe(200)
 
-      const frag = await getFragment(dataDir, storyId, 'gl-0001')
+      const frag = await getFragment(dataDir, storyId, 'gl-tone-guide')
       expect(frag!.sticky).toBe(true)
     })
 
     it('PATCH can unset sticky', async () => {
-      await createFragment(dataDir, storyId, makeFragment({ id: 'gl-0001', type: 'guideline', sticky: true }))
+      await createFragment(dataDir, storyId, makeFragment({ id: 'gl-tone-guide', type: 'guideline', name: 'Tone Guide', sticky: true }))
 
-      const res = await api(`/stories/${storyId}/fragments/gl-0001/sticky`, {
+      const res = await api(`/stories/${storyId}/fragments/gl-tone-guide/sticky`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sticky: false }),
       })
       expect(res.status).toBe(200)
 
-      const frag = await getFragment(dataDir, storyId, 'gl-0001')
+      const frag = await getFragment(dataDir, storyId, 'gl-tone-guide')
       expect(frag!.sticky).toBe(false)
     })
   })

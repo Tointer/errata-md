@@ -8,6 +8,12 @@ import {
 } from '@/server/llm/context-builder'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 
+const MAPEPO_ID = 'ch-mapepo'
+const DEKUVA_ID = 'ch-dekuva'
+const THIRD_ID = 'ch-c'
+const TONE_GUIDE_ID = 'gl-tone-guide'
+const WORLD_LORE_ID = 'kn-world-lore'
+
 function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
   const now = new Date().toISOString()
   return {
@@ -62,14 +68,14 @@ describe('expandFragmentTags', () => {
 
   it('expands a full fragment tag with rendered content', async () => {
     const character = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       content: 'Mapepo is a trickster spirit who haunts the old forest.',
     })
     await createFragment(dataDir, storyId, character)
 
     const result = await expandFragmentTags(
-      'The author references <@ch-bafego> in context.',
+      `The author references <@${MAPEPO_ID}> in context.`,
       dataDir,
       storyId,
     )
@@ -77,12 +83,12 @@ describe('expandFragmentTags', () => {
     // character contextRenderer produces: ## Name\nContent
     expect(result).toContain('## Mapepo')
     expect(result).toContain('Mapepo is a trickster spirit who haunts the old forest.')
-    expect(result).not.toContain('<@ch-bafego>')
+    expect(result).not.toContain(`<@${MAPEPO_ID}>`)
   })
 
   it('expands a :short tag with name and description', async () => {
     const character = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       description: 'A mischievous spirit',
       content: 'Full character sheet content that should not appear.',
@@ -90,7 +96,7 @@ describe('expandFragmentTags', () => {
     await createFragment(dataDir, storyId, character)
 
     const result = await expandFragmentTags(
-      'Mention <@ch-bafego:short> briefly.',
+      `Mention <@${MAPEPO_ID}:short> briefly.`,
       dataDir,
       storyId,
     )
@@ -110,13 +116,13 @@ describe('expandFragmentTags', () => {
 
   it('expands multiple tags in one string', async () => {
     const char1 = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       description: 'A spirit',
       content: 'Spirit content',
     })
     const char2 = makeFragment({
-      id: 'gl-dekuva',
+      id: TONE_GUIDE_ID,
       type: 'guideline',
       name: 'Tone Guide',
       description: 'Keep it dark',
@@ -126,7 +132,7 @@ describe('expandFragmentTags', () => {
     await createFragment(dataDir, storyId, char2)
 
     const result = await expandFragmentTags(
-      'Use <@ch-bafego:short> and follow <@gl-dekuva:short>.',
+      `Use <@${MAPEPO_ID}:short> and follow <@${TONE_GUIDE_ID}:short>.`,
       dataDir,
       storyId,
     )
@@ -137,13 +143,13 @@ describe('expandFragmentTags', () => {
   it('does not recursively expand tags in expanded content by default', async () => {
     // Create a fragment whose content itself contains a tag
     const char1 = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       description: 'Refers to another',
-      content: 'Mapepo is friends with <@ch-dekuva>.',
+      content: `Mapepo is friends with <@${DEKUVA_ID}>.`,
     })
     const char2 = makeFragment({
-      id: 'ch-dekuva',
+      id: DEKUVA_ID,
       name: 'Dekuva',
       description: 'Another character',
       content: 'Dekuva is wise.',
@@ -152,25 +158,25 @@ describe('expandFragmentTags', () => {
     await createFragment(dataDir, storyId, char2)
 
     const result = await expandFragmentTags(
-      'Expand <@ch-bafego> here.',
+      `Expand <@${MAPEPO_ID}> here.`,
       dataDir,
       storyId,
     )
 
     // The expanded content of ch-bafego contains <@ch-dekuva> — it should NOT be expanded
-    expect(result).toContain('<@ch-dekuva>')
+    expect(result).toContain(`<@${DEKUVA_ID}>`)
     expect(result).not.toContain('Dekuva is wise.')
   })
 
   it('recursively expands tags when maxDepth > 0', async () => {
     const char1 = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       description: 'Refers to another',
-      content: 'Mapepo is friends with <@ch-dekuva>.',
+      content: `Mapepo is friends with <@${DEKUVA_ID}>.`,
     })
     const char2 = makeFragment({
-      id: 'ch-dekuva',
+      id: DEKUVA_ID,
       name: 'Dekuva',
       description: 'Another character',
       content: 'Dekuva is wise.',
@@ -179,82 +185,82 @@ describe('expandFragmentTags', () => {
     await createFragment(dataDir, storyId, char2)
 
     const result = await expandFragmentTags(
-      'Expand <@ch-bafego> here.',
+      `Expand <@${MAPEPO_ID}> here.`,
       dataDir,
       storyId,
       { maxDepth: 1 },
     )
 
     // With depth 1, ch-bafego expands AND the nested <@ch-dekuva> also expands
-    expect(result).not.toContain('<@ch-dekuva>')
+    expect(result).not.toContain(`<@${DEKUVA_ID}>`)
     expect(result).toContain('Dekuva is wise.')
   })
 
   it('detects circular references and replaces with marker', async () => {
     // A references B, B references A
     const char1 = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       description: 'Refers to Dekuva',
-      content: 'Mapepo is enemies with <@ch-dekuva>.',
+      content: `Mapepo is enemies with <@${DEKUVA_ID}>.`,
     })
     const char2 = makeFragment({
-      id: 'ch-dekuva',
+      id: DEKUVA_ID,
       name: 'Dekuva',
       description: 'Refers to Mapepo',
-      content: 'Dekuva is enemies with <@ch-bafego>.',
+      content: `Dekuva is enemies with <@${MAPEPO_ID}>.`,
     })
     await createFragment(dataDir, storyId, char1)
     await createFragment(dataDir, storyId, char2)
 
     const result = await expandFragmentTags(
-      'Start with <@ch-bafego>.',
+      `Start with <@${MAPEPO_ID}>.`,
       dataDir,
       storyId,
       { maxDepth: 3 },
     )
 
     // ch-bafego expands, then ch-dekuva expands, but when it tries to expand ch-bafego again → circular
-    expect(result).toContain('[circular fragment: ch-bafego]')
-    expect(result).not.toContain('<@ch-bafego>')
-    expect(result).not.toContain('<@ch-dekuva>')
+    expect(result).toContain(`[circular fragment: ${MAPEPO_ID}]`)
+    expect(result).not.toContain(`<@${MAPEPO_ID}>`)
+    expect(result).not.toContain(`<@${DEKUVA_ID}>`)
   })
 
   it('detects self-referencing circular fragments', async () => {
     const char = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       description: 'Self-referencing',
-      content: 'Mapepo references himself: <@ch-bafego>.',
+      content: `Mapepo references himself: <@${MAPEPO_ID}>.`,
     })
     await createFragment(dataDir, storyId, char)
 
     const result = await expandFragmentTags(
-      'Expand <@ch-bafego>.',
+      `Expand <@${MAPEPO_ID}>.`,
       dataDir,
       storyId,
       { maxDepth: 2 },
     )
 
-    expect(result).toContain('[circular fragment: ch-bafego]')
+    expect(result).toContain(`[circular fragment: ${MAPEPO_ID}]`)
   })
 
   it('respects maxDepth limit even without circular references', async () => {
     // A → B → C (chain of 3), but maxDepth=1 so only 1 level of recursion
     const char1 = makeFragment({
-      id: 'ch-bafego',
+      id: 'ch-a',
       name: 'A',
       description: 'First',
-      content: 'A mentions <@ch-dekuva>.',
+      content: 'A mentions <@ch-b>.',
     })
     const char2 = makeFragment({
-      id: 'ch-dekuva',
+      id: 'ch-b',
       name: 'B',
       description: 'Second',
-      content: 'B mentions <@ch-fugobe>.',
+      content: 'B mentions <@ch-c>.',
     })
     const char3 = makeFragment({
-      id: 'ch-fugobe',
+      id: 'ch-c',
       name: 'C',
       description: 'Third',
       content: 'C is the end.',
@@ -264,15 +270,15 @@ describe('expandFragmentTags', () => {
     await createFragment(dataDir, storyId, char3)
 
     const result = await expandFragmentTags(
-      'Start: <@ch-bafego>.',
+      'Start: <@ch-a>.',
       dataDir,
       storyId,
       { maxDepth: 1 },
     )
 
     // A expands (depth 0→1), B expands (depth 1→done), but C's tag is NOT expanded (no more depth)
-    expect(result).not.toContain('<@ch-dekuva>')
-    expect(result).toContain('<@ch-fugobe>')  // Not expanded — depth exhausted
+    expect(result).not.toContain('<@ch-b>')
+    expect(result).toContain('<@ch-c>')  // Not expanded — depth exhausted
     expect(result).not.toContain('C is the end.')
   })
 
@@ -284,7 +290,7 @@ describe('expandFragmentTags', () => {
 
   it('handles different fragment types', async () => {
     const knowledge = makeFragment({
-      id: 'kn-bafego',
+      id: WORLD_LORE_ID,
       type: 'knowledge',
       name: 'World Lore',
       description: 'Geography details',
@@ -293,7 +299,7 @@ describe('expandFragmentTags', () => {
     await createFragment(dataDir, storyId, knowledge)
 
     const result = await expandFragmentTags(
-      'See <@kn-bafego> for details.',
+      `See <@${WORLD_LORE_ID}> for details.`,
       dataDir,
       storyId,
     )
@@ -317,7 +323,7 @@ describe('expandMessagesFragmentTags', () => {
     await createStory(dataDir, makeStory())
 
     const character = makeFragment({
-      id: 'ch-bafego',
+      id: MAPEPO_ID,
       name: 'Mapepo',
       description: 'A spirit',
       content: 'Mapepo is a trickster.',
@@ -331,8 +337,8 @@ describe('expandMessagesFragmentTags', () => {
 
   it('expands tags in both system and user messages', async () => {
     const messages: ContextMessage[] = [
-      { role: 'system', content: 'You write about <@ch-bafego:short>.' },
-      { role: 'user', content: 'Continue the story with <@ch-bafego>.' },
+      { role: 'system', content: `You write about <@${MAPEPO_ID}:short>.` },
+      { role: 'user', content: `Continue the story with <@${MAPEPO_ID}>.` },
     ]
 
     const expanded = await expandMessagesFragmentTags(messages, dataDir, storyId)
@@ -361,8 +367,8 @@ describe('expandMessagesFragmentTags', () => {
 
   it('handles duplicate tags across messages', async () => {
     const messages: ContextMessage[] = [
-      { role: 'system', content: 'About <@ch-bafego:short>.' },
-      { role: 'user', content: 'More about <@ch-bafego:short>.' },
+      { role: 'system', content: `About <@${MAPEPO_ID}:short>.` },
+      { role: 'user', content: `More about <@${MAPEPO_ID}:short>.` },
     ]
 
     const expanded = await expandMessagesFragmentTags(messages, dataDir, storyId)

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type StoryMeta, type GlobalConfigSafe } from '@/lib/api'
+import { getDesktopApi, isDesktopApp, type DesktopRuntimeInfo } from '@/lib/desktop'
 import { useTheme, useQuickSwitch, useCharacterMentions, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue, useCustomCss, useProseColors, useWritingTransforms, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
-import { Settings2, ChevronRight, ExternalLink, Eye, EyeOff, Puzzle, RotateCcw, CircleHelp, Code, Wand2, Compass, ArrowLeft, Palette } from 'lucide-react'
+import { Settings2, ChevronRight, ExternalLink, Eye, EyeOff, Puzzle, RotateCcw, CircleHelp, Code, Wand2, Compass, ArrowLeft, Palette, HardDrive } from 'lucide-react'
 import { useHelp } from '@/hooks/use-help'
 import { CustomCssPanel } from '@/components/settings/CustomCssPanel'
 import { ProseColorsPanel } from '@/components/settings/ProseColorsPanel'
@@ -407,6 +408,7 @@ export function SettingsPanel({
   const [writingTransforms] = useWritingTransforms()
   const enabledTransformCount = writingTransforms.filter(t => t.enabled).length
   const { openHelp } = useHelp()
+  const desktop = getDesktopApi()
   const { theme, setTheme } = useTheme()
   const [quickSwitch, setQuickSwitch] = useQuickSwitch()
   const [characterMentions, setCharacterMentions] = useCharacterMentions()
@@ -419,8 +421,48 @@ export function SettingsPanel({
   const [, customCssEnabled, , setCustomCssEnabled] = useCustomCss()
   const [proseColors] = useProseColors()
   const hasProseColors = Object.values(proseColors).some(Boolean)
+  const [desktopInfo, setDesktopInfo] = useState<DesktopRuntimeInfo | null>(null)
+  const [pickedFolder, setPickedFolder] = useState<string | null>(null)
 
   const summaryCompact = story.settings.summaryCompact ?? { maxCharacters: 12000, targetCharacters: 9000 }
+
+  useEffect(() => {
+    if (!desktop) {
+      return
+    }
+
+    let cancelled = false
+
+    desktop.getRuntimeInfo()
+      .then((info) => {
+        if (!cancelled) {
+          setDesktopInfo(info)
+        }
+      })
+      .catch((error) => {
+        console.error('[desktop] Failed to load runtime info', error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [desktop])
+
+  const handlePickFolder = async () => {
+    if (!desktop) {
+      return
+    }
+
+    const result = await desktop.showOpenDialog({
+      title: 'Choose a folder',
+      buttonLabel: 'Select folder',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+
+    if (!result.canceled) {
+      setPickedFolder(result.filePaths[0] ?? null)
+    }
+  }
 
   if (proseColorsPanelOpen) {
     return <ProseColorsPanel onClose={() => setProseColorsPanelOpen(false)} />
@@ -936,6 +978,43 @@ export function SettingsPanel({
           </div>
         )}
       </div>
+
+      {isDesktopApp() && desktopInfo && (
+        <div>
+          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-2 block">Desktop</label>
+          <div className="rounded-lg border border-border/30 divide-y divide-border/20 overflow-hidden">
+            <div className="px-3 py-2.5 bg-muted/10">
+              <div className="flex items-center gap-1.5">
+                <HardDrive className="size-3 text-muted-foreground" />
+                <p className="text-[0.75rem] font-medium text-foreground/80">Local storage</p>
+              </div>
+              <p className="text-[0.625rem] text-muted-foreground mt-1 leading-snug break-all">{desktopInfo.dataDir}</p>
+              <p className="text-[0.625rem] text-muted-foreground/80 mt-1 leading-snug break-all">config.json: {desktopInfo.configPath}</p>
+            </div>
+
+            <div className="px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[0.75rem] font-medium text-foreground/80">Folder picker</p>
+                  <p className="text-[0.625rem] text-muted-foreground mt-0.5 leading-snug">
+                    Native folder browsing is live. Vault switching is still separate work.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handlePickFolder()}
+                  className="shrink-0 rounded-md border border-border/40 px-2.5 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground/70 hover:bg-accent/20 transition-colors"
+                >
+                  Browse...
+                </button>
+              </div>
+              {pickedFolder && (
+                <p className="text-[0.625rem] text-muted-foreground mt-2 leading-snug break-all">Selected: {pickedFolder}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Attribution */}
       <div className="pt-4 mt-2 border-t border-border/20">

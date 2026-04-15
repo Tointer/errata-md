@@ -46,7 +46,7 @@ function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
 function makeFragment(overrides: Partial<Fragment> = {}): Fragment {
   const now = new Date().toISOString()
   return {
-    id: 'ch-hero',
+    id: 'ch-kael',
     type: 'character',
     name: 'Kael',
     description: 'A mysterious wanderer',
@@ -59,7 +59,6 @@ function makeFragment(overrides: Partial<Fragment> = {}): Fragment {
     updatedAt: now,
     order: 0,
     meta: {},
-    archived: false,
     ...overrides,
   }
 }
@@ -140,7 +139,7 @@ describe('character chat endpoints', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body ?? {
-          characterId: 'ch-hero',
+          characterId: 'ch-kael',
           persona: { type: 'stranger' },
         }),
       }),
@@ -159,7 +158,7 @@ describe('character chat endpoints', () => {
 
       const conv = await res.json()
       expect(conv.id).toMatch(/^cc-/)
-      expect(conv.characterId).toBe('ch-hero')
+      expect(conv.characterId).toBe('ch-kael')
       expect(conv.persona).toEqual({ type: 'stranger' })
       expect(conv.title).toBe('Chat with Kael')
       expect(conv.messages).toEqual([])
@@ -171,7 +170,7 @@ describe('character chat endpoints', () => {
       await createFragment(dataDir, story.id, makeFragment())
 
       const res = await createTestConversation(story.id, {
-        characterId: 'ch-hero',
+        characterId: 'ch-kael',
         persona: { type: 'stranger' },
         title: 'My Custom Chat',
       })
@@ -212,15 +211,15 @@ describe('character chat endpoints', () => {
       await createFragment(dataDir, story.id, makeFragment())
       await createFragment(dataDir, story.id, makeFragment({ id: 'ch-villain', name: 'Villain', type: 'character' }))
 
-      await createTestConversation(story.id, { characterId: 'ch-hero', persona: { type: 'stranger' } })
+      await createTestConversation(story.id, { characterId: 'ch-kael', persona: { type: 'stranger' } })
       await createTestConversation(story.id, { characterId: 'ch-villain', persona: { type: 'stranger' } })
 
       const res = await app.fetch(
-        new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations?characterId=ch-hero`),
+        new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations?characterId=ch-kael`),
       )
       const list = await res.json()
       expect(list).toHaveLength(1)
-      expect(list[0].characterId).toBe('ch-hero')
+      expect(list[0].characterId).toBe('ch-kael')
     })
 
     it('gets a conversation by id', async () => {

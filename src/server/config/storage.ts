@@ -3,8 +3,12 @@ import { join } from 'node:path'
 import { GlobalConfigSchema, type GlobalConfig, type ProviderConfig } from './schema'
 import { writeJsonAtomic } from '../fs-utils'
 
+function resolveConfigDataDir(dataDir: string): string {
+  return process.env.GLOBAL_DATA_DIR?.trim() || dataDir
+}
+
 function configPath(dataDir: string): string {
-  return join(dataDir, 'config.json')
+  return join(resolveConfigDataDir(dataDir), 'config.json')
 }
 
 export async function getGlobalConfig(dataDir: string): Promise<GlobalConfig> {
@@ -17,7 +21,7 @@ export async function getGlobalConfig(dataDir: string): Promise<GlobalConfig> {
 }
 
 export async function saveGlobalConfig(dataDir: string, config: GlobalConfig): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true })
+  await fs.mkdir(resolveConfigDataDir(dataDir), { recursive: true })
   await writeJsonAtomic(configPath(dataDir), config)
 }
 

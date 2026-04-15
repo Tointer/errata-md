@@ -190,7 +190,7 @@ export function createFragmentTools(
     execute: withToolLogging('listFragments', storyId, async ({ type }: { type?: string }) => {
       const fragments = await listFragments(dataDir, storyId, type)
       return {
-        fragments: fragments.filter((f) => !f.archived).map((f) => ({
+        fragments: fragments.map((f) => ({
           id: f.id,
           type: f.type,
           name: f.name,
@@ -211,7 +211,6 @@ export function createFragmentTools(
       const lowerQuery = query.toLowerCase()
       const matches: Array<{ id: string; type: string; name: string; excerpt: string }> = []
       for (const f of fragments) {
-        if (f.archived) continue
         // Image/icon fragments contain binary data or URLs, not searchable text
         if (!type && (f.type === 'image' || f.type === 'icon')) continue
         const idx = f.content.toLowerCase().indexOf(lowerQuery)
@@ -255,7 +254,7 @@ export function createFragmentTools(
         content: z.string().describe('Full fragment content'),
       }),
       execute: withToolLogging('createFragment', storyId, async ({ type, name, description, content }) => {
-        const id = generateFragmentId(type)
+        const id = generateFragmentId(type, name)
         const now = new Date().toISOString()
         const fragment: Fragment = {
           id,
@@ -271,7 +270,6 @@ export function createFragmentTools(
           updatedAt: now,
           order: 0,
           meta: {},
-          archived: false,
           version: 1,
           versions: [],
         }
@@ -373,12 +371,12 @@ export function createFragmentTools(
         if (activeIds.length > 0) {
           for (const id of activeIds) {
             const f = await getFragment(dataDir, storyId, id)
-            if (f && !f.archived) proseFragments.push(f)
+            if (f) proseFragments.push(f)
           }
         } else {
           // Fallback: no chain yet, use all prose
           const all = await listFragments(dataDir, storyId, 'prose')
-          proseFragments.push(...all.filter(f => !f.archived))
+          proseFragments.push(...all)
         }
 
         const edited: string[] = []

@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { getContentRoot } from '../fragments/branches'
+import { getInternalStoryPath } from '../md-files/paths'
 import { generateConversationId } from '@/lib/fragment-ids'
 import { writeJsonAtomic } from '../fs-utils'
 
@@ -120,8 +120,7 @@ export interface LibrarianAnalysisIndex {
 // --- Path helpers ---
 
 async function librarianDir(dataDir: string, storyId: string): Promise<string> {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, 'librarian')
+  return getInternalStoryPath(dataDir, storyId, 'librarian')
 }
 
 async function analysesDir(dataDir: string, storyId: string): Promise<string> {

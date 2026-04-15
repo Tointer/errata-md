@@ -225,7 +225,7 @@ describe('librarian API routes', () => {
     it('updates an existing targeted fragment when suggestion has targetFragmentId', async () => {
       const now = new Date().toISOString()
       await createFragment(dataDir, storyId, {
-        id: 'kn-0001',
+        id: 'kn-valdris',
         type: 'knowledge',
         name: 'Valdris',
         description: 'Ancient city',
@@ -245,7 +245,7 @@ describe('librarian API routes', () => {
         fragmentSuggestions: [
           {
             type: 'knowledge',
-            targetFragmentId: 'kn-0001',
+            targetFragmentId: 'kn-valdris',
             name: 'Valdris',
             description: 'Ancient defended city',
             content: 'Valdris is an ancient city defended by stone sentinels.',
@@ -260,9 +260,9 @@ describe('librarian API routes', () => {
       )
       expect(res.status).toBe(200)
       const data = await res.json()
-      expect(data.createdFragmentId).toBe('kn-0001')
+      expect(data.createdFragmentId).toBe('kn-valdris')
 
-      const updated = await getFragment(dataDir, storyId, 'kn-0001')
+      const updated = await getFragment(dataDir, storyId, 'kn-valdris')
       expect(updated).toBeTruthy()
       expect(updated?.description).toBe('Ancient defended city')
       expect(updated?.content).toContain('stone sentinels')

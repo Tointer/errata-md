@@ -61,6 +61,11 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
     queryFn: () => api.fragments.list(storyId),
   })
 
+  const archivedFragmentsQuery = useQuery({
+    queryKey: ['fragments-archived', storyId],
+    queryFn: () => api.fragments.listArchived(storyId),
+  })
+
   const proseChainQuery = useQuery({
     queryKey: ['proseChain', storyId],
     queryFn: () => api.proseChain.get(storyId),
@@ -80,7 +85,8 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
   // Compute stats
   const stats = useMemo(() => {
     const fragments = allFragmentsQuery.data ?? []
-    const active = fragments.filter(f => !f.archived)
+    const archivedFragments = archivedFragmentsQuery.data ?? []
+    const active = fragments
 
     const byType: Record<string, number> = {}
     for (const f of active) {
@@ -97,7 +103,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
     ) ?? 0
 
     const pinned = active.filter(f => f.sticky).length
-    const archived = fragments.filter(f => f.archived).length
+    const archived = archivedFragments.length
     const generations = genLogsQuery.data?.length ?? 0
 
     return {
@@ -114,7 +120,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       guidelines: byType['guideline'] ?? 0,
       knowledge: byType['knowledge'] ?? 0,
     }
-  }, [allFragmentsQuery.data, proseChainQuery.data, genLogsQuery.data])
+  }, [allFragmentsQuery.data, archivedFragmentsQuery.data, proseChainQuery.data, genLogsQuery.data])
 
   const updateMutation = useMutation({
     mutationFn: (data: { name: string; description: string; summary?: string; coverImage?: string | null }) =>

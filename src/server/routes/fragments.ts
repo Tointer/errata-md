@@ -4,11 +4,13 @@ import {
   createFragment,
   getFragment,
   listFragments,
+  listArchivedFragments,
   updateFragment,
   updateFragmentVersioned,
   deleteFragment,
   archiveFragment,
   restoreFragment,
+  isFragmentArchived,
   listFragmentVersions,
   revertFragmentToVersion,
 } from '../fragments/storage'
@@ -20,7 +22,7 @@ import {
   getRefs,
   getBackRefs,
 } from '../fragments/associations'
-import { generateFragmentId } from '@/lib/fragment-ids'
+import { deriveFragmentIdFromName, generateFragmentId, usesNameDerivedFragmentId } from '@/lib/fragment-ids'
 import { registry } from '../fragments/registry'
 import { triggerLibrarian } from '../librarian/scheduler'
 import { clearAnalysisIndexEntry } from '../librarian/storage'
@@ -46,7 +48,9 @@ export function fragmentRoutes(dataDir: string) {
       const now = new Date().toISOString()
       // Use provided ID if available and not already taken, otherwise generate
       let id: string
-      if (body.id) {
+      if (usesNameDerivedFragmentId(body.type)) {
+        id = deriveFragmentIdFromName(body.type, body.name)
+      } else if (body.id) {
         const existing = await getFragment(dataDir, params.storyId, body.id)
         id = existing ? generateFragmentId(body.type) : body.id
       } else {
@@ -64,7 +68,6 @@ export function fragmentRoutes(dataDir: string) {
         placement: 'user',
         createdAt: now,
         updatedAt: now,
-        archived: false,
         order: 0,
         meta: body.meta ?? {},
         version: 1,
@@ -87,9 +90,13 @@ export function fragmentRoutes(dataDir: string) {
 
     .get('/stories/:storyId/fragments', async ({ params, query }) => {
       const type = query.type as string | undefined
-      const includeArchived = (query as Record<string, string>).includeArchived === 'true'
-      return listFragments(dataDir, params.storyId, type, { includeArchived })
+      return listFragments(dataDir, params.storyId, type)
     }, { detail: { summary: 'List fragments, optionally filtered by type' } })
+
+    .get('/stories/:storyId/fragments/archived', async ({ params, query }) => {
+      const type = query.type as string | undefined
+      return listArchivedFragments(dataDir, params.storyId, type)
+    }, { detail: { summary: 'List archived fragments' } })
 
     .get('/stories/:storyId/fragments/:fragmentId', async ({ params, set }) => {
       const fragment = await getFragment(
@@ -211,7 +218,7 @@ export function fragmentRoutes(dataDir: string) {
         set.status = 404
         return { error: 'Fragment not found' }
       }
-      const isArchived = Boolean((fragment as Fragment & { archived?: boolean }).archived)
+      const isArchived = await isFragmentArchived(dataDir, params.storyId, params.fragmentId)
       if (!isArchived) {
         set.status = 422
         return { error: 'Fragment must be archived before deletion' }
@@ -221,12 +228,14 @@ export function fragmentRoutes(dataDir: string) {
     }, { detail: { summary: 'Permanently delete an archived fragment' } })
 
     .get('/stories/:storyId/fragments/:fragmentId/versions', async ({ params, set }) => {
-      const versions = await listFragmentVersions(dataDir, params.storyId, params.fragmentId)
-      if (!versions) {
+      const fragment = await getFragment(dataDir, params.storyId, params.fragmentId)
+      if (!fragment) {
         set.status = 404
         return { error: 'Fragment not found' }
       }
-      return { versions }
+
+      set.status = 410
+      return { error: 'Fragment version history has been removed from Errata.' }
     }, { detail: { summary: 'List version history' } })
 
     .post('/stories/:storyId/fragments/:fragmentId/versions/:version/revert', async ({ params, set }) => {
@@ -245,12 +254,9 @@ export function fragmentRoutes(dataDir: string) {
         set.status = 404
         return { error: 'Fragment not found' }
       }
-      const updated = await revertFragmentToVersion(dataDir, params.storyId, params.fragmentId, targetVersion)
-      if (!updated) {
-        set.status = 422
-        return { error: `Version ${targetVersion} not found` }
-      }
-      return updated
+
+      set.status = 410
+      return { error: 'Fragment version history has been removed from Errata.' }
     }, { detail: { summary: 'Revert to a specific version' } })
 
     // --- Archive / Restore ---

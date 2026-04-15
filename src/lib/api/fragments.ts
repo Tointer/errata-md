@@ -67,8 +67,6 @@ export const fragments = {
     apiFetch<Fragment>(`/stories/${storyId}/fragments/${fragmentId}/archive`, { method: 'POST' }),
   restore: (storyId: string, fragmentId: string) =>
     apiFetch<Fragment>(`/stories/${storyId}/fragments/${fragmentId}/restore`, { method: 'POST' }),
-  listArchived: async (storyId: string) => {
-    const all = await apiFetch<Fragment[]>(`/stories/${storyId}/fragments?includeArchived=true`)
-    return all.filter((f) => f.archived)
-  },
+  listArchived: (storyId: string, type?: string) =>
+    apiFetch<Fragment[]>(`/stories/${storyId}/fragments/archived${type ? `?type=${type}` : ''}`),
 }

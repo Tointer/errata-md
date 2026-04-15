@@ -194,34 +194,46 @@ export function ProseChainView({
   const { data: proseChain } = useQuery({
     queryKey: ['proseChain', storyId],
     queryFn: () => api.proseChain.get(storyId),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: fragments = [] } = useQuery({
     queryKey: ['fragments', storyId, 'prose'],
     queryFn: () => api.fragments.list(storyId, 'prose'),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: markerFragments = [] } = useQuery({
     queryKey: ['fragments', storyId, 'marker'],
     queryFn: () => api.fragments.list(storyId, 'marker'),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: characterFragments = [] } = useQuery({
     queryKey: ['fragments', storyId, 'character'],
     queryFn: () => api.fragments.list(storyId, 'character'),
     enabled: mentionsEnabled,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: imageFragments = [] } = useQuery({
     queryKey: ['fragments', storyId, 'image'],
     queryFn: () => api.fragments.list(storyId, 'image'),
     enabled: mentionsEnabled,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: iconFragments = [] } = useQuery({
     queryKey: ['fragments', storyId, 'icon'],
     queryFn: () => api.fragments.list(storyId, 'icon'),
     enabled: mentionsEnabled,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
 
   const { data: analysisIndex } = useQuery({

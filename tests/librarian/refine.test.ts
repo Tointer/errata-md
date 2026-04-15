@@ -53,7 +53,6 @@ function makeFragment(overrides: Partial<Fragment>): Fragment {
     updatedAt: now,
     order: 0,
     meta: {},
-    archived: false,
     ...overrides,
   }
 }
@@ -128,7 +127,7 @@ describe('librarian refine endpoint', () => {
 
     const fragment = makeFragment({
       type: 'character',
-      id: 'ch-refine',
+      id: 'ch-bob',
       name: 'Bob',
       content: 'Bob is a blacksmith.',
     })
@@ -159,7 +158,7 @@ describe('librarian refine endpoint', () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
-    const fragment = makeFragment({ type: 'guideline', id: 'gl-refine', name: 'Tone' })
+    const fragment = makeFragment({ type: 'guideline', id: 'gl-tone', name: 'Tone' })
     await createFragment(dataDir, story.id, fragment)
 
     mockExecute.mockResolvedValue(createMockStreamResult('Updated guideline'))
@@ -184,7 +183,7 @@ describe('librarian refine endpoint', () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
-    const fragment = makeFragment({ type: 'character', id: 'ch-refine2', name: 'Eve' })
+    const fragment = makeFragment({ type: 'character', id: 'ch-eve', name: 'Eve' })
     await createFragment(dataDir, story.id, fragment)
 
     mockExecute.mockResolvedValue(createMockStreamResult('Refined'))
@@ -210,7 +209,7 @@ describe('librarian refine endpoint', () => {
     await createStory(dataDir, story)
 
     // Use a character fragment instead of prose (prose can't be refined via this endpoint)
-    const character = makeFragment({ type: 'character', id: 'ch-refine', name: 'Hero', content: 'A brave warrior' })
+    const character = makeFragment({ type: 'character', id: 'ch-hero', name: 'Hero', content: 'A brave warrior' })
     await createFragment(dataDir, story.id, character)
 
     mockExecute.mockResolvedValue(createMockStreamResult('Refined character'))
@@ -236,7 +235,7 @@ describe('librarian refine endpoint', () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
-    const fragment = makeFragment({ type: 'knowledge', id: 'kn-refine', name: 'Magic' })
+    const fragment = makeFragment({ type: 'knowledge', id: 'kn-magic', name: 'Magic' })
     await createFragment(dataDir, story.id, fragment)
 
     mockExecute.mockResolvedValue(createMockStreamResult('Improved knowledge'))
@@ -260,7 +259,7 @@ describe('librarian refine endpoint', () => {
 
     const fragment = makeFragment({
       type: 'guideline',
-      id: 'gl-refine',
+      id: 'gl-style-guide',
       name: 'Style Guide',
       content: 'Always use active voice.',
     })
@@ -337,8 +336,8 @@ describe('librarian refine endpoint', () => {
     await createStory(dataDir, story)
 
     const fragment = makeFragment({
-      id: 'ch-transform',
       type: 'character',
+      id: 'ch-captain',
       name: 'Captain',
       content: 'A stern commander.',
     })

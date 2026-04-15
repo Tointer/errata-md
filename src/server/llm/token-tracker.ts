@@ -10,6 +10,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { createLogger } from '../logging'
+import { getInternalStoryPath, getInternalStoryRoot } from '../md-files/paths'
 import { writeJsonAtomic } from '../fs-utils'
 
 const logger = createLogger('token-tracker')
@@ -57,7 +58,7 @@ const pendingWrites = new Map<string, NodeJS.Timeout>()
 const FLUSH_DELAY_MS = 2000
 
 function usagePath(dataDir: string, storyId: string): string {
-  return join(dataDir, 'stories', storyId, 'token-usage.json')
+  return getInternalStoryPath(dataDir, storyId, 'token-usage.json')
 }
 
 function emptyProjectUsage(): ProjectUsage {
@@ -82,7 +83,7 @@ async function readProjectFile(dataDir: string, storyId: string): Promise<Projec
 }
 
 async function writeProjectFile(dataDir: string, storyId: string, data: ProjectUsage): Promise<void> {
-  const dir = join(dataDir, 'stories', storyId)
+  const dir = getInternalStoryRoot(dataDir, storyId)
   await mkdir(dir, { recursive: true })
   await writeJsonAtomic(usagePath(dataDir, storyId), data)
 }
