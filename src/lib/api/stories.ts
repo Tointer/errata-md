@@ -1,7 +1,5 @@
-import { apiFetch } from './client'
+import { apiFetch, resolveApiPath } from './client'
 import type { StoryMeta } from './types'
-
-const API_BASE = '/api'
 
 export const stories = {
   list: () => apiFetch<StoryMeta[]>('/stories'),
@@ -13,7 +11,7 @@ export const stories = {
   delete: (id: string) =>
     apiFetch<{ ok: boolean }>(`/stories/${id}`, { method: 'DELETE' }),
   exportAsZip: async (storyId: string) => {
-    const res = await fetch(`${API_BASE}/stories/${storyId}/export`)
+    const res = await fetch(resolveApiPath(`/stories/${storyId}/export`))
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }))
       throw new Error(err.error ?? `Export failed: ${res.status}`)
@@ -34,7 +32,7 @@ export const stories = {
   importFromZip: async (file: File): Promise<StoryMeta> => {
     const formData = new FormData()
     formData.append('file', file)
-    const res = await fetch(`${API_BASE}/stories/import`, {
+    const res = await fetch(resolveApiPath('/stories/import'), {
       method: 'POST',
       body: formData,
     })

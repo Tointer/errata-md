@@ -14,12 +14,12 @@ async function listTemplateNames() {
 }
 
 function printUsage() {
-  console.log('Usage: bun scripts/new-plugin.mjs <plugin-name> [target-dir] [--template <template-name>]')
+  console.log('Usage: node scripts/new-plugin.mjs <plugin-name> [target-dir] [--template <template-name>]')
   console.log('')
   console.log('Examples:')
-  console.log('  bun scripts/new-plugin.mjs lore-tools')
-  console.log('  bun scripts/new-plugin.mjs lore-tools C:/errata-plugins')
-  console.log('  bun scripts/new-plugin.mjs lore-tools --template recipe-llm-tool-plugin')
+  console.log('  npm run new:plugin -- lore-tools')
+  console.log('  npm run new:plugin -- lore-tools C:/errata-plugins')
+  console.log('  npm run new:plugin -- lore-tools --template recipe-llm-tool-plugin')
 }
 
 function toTitleCase(name) {
@@ -60,7 +60,7 @@ async function replaceInFile(filePath, replacements) {
 }
 
 async function main() {
-  const [, , pluginNameArg, ...restArgs] = Bun.argv
+  const [, , pluginNameArg, ...restArgs] = process.argv
 
   if (!pluginNameArg || pluginNameArg === '--help' || pluginNameArg === '-h') {
     printUsage()

@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -73,7 +73,7 @@ export async function loadPlugin(
   const pluginJsonPath = join(pluginRoot, 'plugin.json')
   if (existsSync(pluginJsonPath)) {
     try {
-      const pluginJson = JSON.parse(await Bun.file(pluginJsonPath).text()) as PluginJson
+      const pluginJson = JSON.parse(await readFile(pluginJsonPath, 'utf-8')) as PluginJson
 
       if (pluginJson.name && pluginJson.name !== plugin.manifest.name) {
         throw new Error(

@@ -3,8 +3,15 @@ import { loadAllPlugins } from './plugins/loader'
 import { clearRuntimePluginUi } from './plugins/runtime-ui'
 import { createApp } from './api'
 import type { WritingPlugin } from './plugins/types'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+type PluginModule = { default: WritingPlugin }
+
+type ImportMetaWithGlob = ImportMeta & {
+  glob?: <T>(pattern: string, options: { eager: true }) => Record<string, T>
+}
 
 async function ensureStartupDirectories(dataDir: string, pluginDir?: string) {
   await mkdir(dataDir, { recursive: true })
@@ -18,19 +25,52 @@ async function ensureStartupDirectories(dataDir: string, pluginDir?: string) {
 
 // Discover plugins at build time using Vite's import.meta.glob.
 // Adding a new plugin only requires creating plugins/<name>/entry.server.ts — no edits here.
-const pluginModules = import.meta.glob<{ default: WritingPlugin }>(
-  '../../plugins/*/entry.server.ts',
-  { eager: true },
-)
+function getBundledPluginModules(): Record<string, PluginModule> | null {
+  const viteImportMeta = import.meta as ImportMetaWithGlob
+  if (typeof import.meta.glob === 'function') {
+    return import.meta.glob<PluginModule>('../../plugins/*/entry.server.ts', { eager: true })
+  }
 
-async function initializeApp() {
-  const dataDir = process.env.DATA_DIR ?? './data'
+  return viteImportMeta.glob?.<PluginModule>('../../plugins/*/entry.server.ts', { eager: true }) ?? null
+}
 
-  // Clear previous registrations (handles Vite HMR re-evaluation)
-  pluginRegistry.clear()
-  clearRuntimePluginUi()
+const pluginModules = getBundledPluginModules()
 
-  for (const [path, mod] of Object.entries(pluginModules)) {
+async function loadBundledPluginsFromFilesystem(): Promise<Array<[string, PluginModule]>> {
+  const pluginsDir = fileURLToPath(new URL('../../plugins', import.meta.url))
+  const entries = await readdir(pluginsDir, { withFileTypes: true })
+  const modules: Array<[string, PluginModule]> = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+
+    const pluginPath = join(pluginsDir, entry.name, 'entry.server.ts')
+    try {
+      const mod = await import(/* @vite-ignore */ pathToFileURL(pluginPath).href) as PluginModule
+      modules.push([pluginPath, mod])
+    } catch (error) {
+      if (error instanceof Error && /Cannot find module|Cannot find package|ERR_MODULE_NOT_FOUND/i.test(error.message)) {
+        continue
+      }
+      throw error
+    }
+  }
+
+  return modules
+}
+
+async function getBundledPluginEntries(): Promise<Array<[string, PluginModule]>> {
+  if (pluginModules) {
+    return Object.entries(pluginModules)
+  }
+
+  return loadBundledPluginsFromFilesystem()
+}
+
+async function registerBundledPlugins(): Promise<void> {
+  const bundledEntries = await getBundledPluginEntries()
+
+  for (const [path, mod] of bundledEntries) {
     const plugin = mod.default
     if (plugin?.manifest) {
       pluginRegistry.register(plugin)
@@ -38,6 +78,16 @@ async function initializeApp() {
       console.warn(`[plugins] Skipping ${path}: no valid default export`)
     }
   }
+}
+
+export async function initializeApp() {
+  const dataDir = process.env.DATA_DIR ?? './data'
+
+  // Clear previous registrations (handles Vite HMR re-evaluation)
+  pluginRegistry.clear()
+  clearRuntimePluginUi()
+
+  await registerBundledPlugins()
 
   const externalPluginsDir = process.env.PLUGIN_DIR?.trim()
   const allowExternalOverride = process.env.PLUGIN_EXTERNAL_OVERRIDE === '1'

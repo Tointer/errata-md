@@ -5,6 +5,7 @@ import { getRuntimePluginUi } from './plugins/runtime-ui'
 import { instructionRegistry } from './instructions'
 import { dirname, extname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 
 import { storyRoutes } from './routes/stories'
 import { branchRoutes } from './routes/branches'
@@ -86,7 +87,7 @@ export function createApp(dataDir: string = DATA_DIR) {
         }
       })
     }, { detail: { tags: ['Plugins'], summary: 'List all plugins' } })
-    .get('/plugins/:pluginName/ui/*', ({ params, set }) => {
+    .get('/plugins/:pluginName/ui/*', async ({ params, set }) => {
       const runtimeUi = getRuntimePluginUi(params.pluginName)
       if (!runtimeUi) {
         set.status = 404
@@ -110,7 +111,7 @@ export function createApp(dataDir: string = DATA_DIR) {
         return { error: 'Plugin asset not found' }
       }
 
-      return new Response(Bun.file(targetPath), {
+      return new Response(await readFile(targetPath), {
         headers: {
           'content-type': contentTypeForPath(targetPath),
           'cache-control': 'no-cache',

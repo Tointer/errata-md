@@ -7,6 +7,8 @@ import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { nitro } from 'nitro/vite'
 
+const disableDevtools = process.env.ERRATA_DISABLE_DEVTOOLS === '1'
+
 const config = defineConfig({
   define: {
     __BUILD_VERSION__: JSON.stringify(
@@ -19,7 +21,7 @@ const config = defineConfig({
     },
   },
   plugins: [
-    devtools(),
+    ...(!disableDevtools ? [devtools()] : []),
     nitro({
       runtimeConfig: { port: 7739 },
       rollupConfig: { external: [/^@sentry\//] },

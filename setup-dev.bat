@@ -1,37 +1,36 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo [1/4] Checking for Bun...
-where bun >nul 2>nul
+echo [1/4] Checking for Node.js...
+where node >nul 2>nul
 if %errorlevel% neq 0 (
-  echo Bun was not found on PATH.
-  echo [2/4] Installing Bun with winget...
+  echo Node.js was not found on PATH.
+  echo [2/4] Installing Node.js LTS with winget...
 
   where winget >nul 2>nul
   if %errorlevel% neq 0 (
     echo ERROR: winget is not available on this machine.
-    echo Please install Bun manually from https://bun.sh and run this script again.
+    echo Please install Node.js LTS manually and run this script again.
     exit /b 1
   )
 
-  winget install --id Oven-sh.Bun -e --source winget --accept-package-agreements --accept-source-agreements
+  winget install --id OpenJS.NodeJS.LTS -e --source winget --accept-package-agreements --accept-source-agreements
   if %errorlevel% neq 0 (
-    echo ERROR: Bun installation failed.
+    echo ERROR: Node.js installation failed.
     exit /b 1
   )
 
-  rem Try common Bun install locations in case PATH is not refreshed yet.
-  if exist "%USERPROFILE%\.bun\bin\bun.exe" set "PATH=%USERPROFILE%\.bun\bin;%PATH%"
-  if exist "%ProgramFiles%\Bun\bin\bun.exe" set "PATH=%ProgramFiles%\Bun\bin;%PATH%"
+  rem Try a common install location in case PATH is not refreshed yet.
+  if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;%PATH%"
 
-  where bun >nul 2>nul
+  where node >nul 2>nul
   if %errorlevel% neq 0 (
-    echo ERROR: Bun installed, but this shell cannot find it yet.
+    echo ERROR: Node.js installed, but this shell cannot find it yet.
     echo Open a new terminal and run setup-dev.bat again.
     exit /b 1
   )
 ) else (
-  echo Bun is already installed.
+  echo Node.js is already installed.
 )
 
 where git >nul 2>nul
@@ -45,13 +44,13 @@ if %errorlevel% equ 0 (
 )
 
 echo [3/4] Installing dependencies...
-bun install
+npm install
 if %errorlevel% neq 0 (
-  echo ERROR: bun install failed.
+  echo ERROR: npm install failed.
   exit /b 1
 )
 
 echo [4/4] Starting dev server...
-bun run dev
+npm run dev
 
 endlocal

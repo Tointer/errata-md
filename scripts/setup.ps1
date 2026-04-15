@@ -3,11 +3,11 @@
 .SYNOPSIS
     One-click setup for Errata development environment.
 .DESCRIPTION
-    Installs Git and Bun if missing, clones/pulls the repository,
+    Installs Git and Node.js if missing, clones/pulls the repository,
     installs dependencies, and starts the dev server.
 .NOTES
     Run from any directory:
-      irm https://raw.githubusercontent.com/tealios/errata/master/scripts/setup.ps1 | iex
+            Invoke-RestMethod https://raw.githubusercontent.com/tealios/errata/master/scripts/setup.ps1 | Invoke-Expression
     Or locally:
       powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
 #>
@@ -35,21 +35,21 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "Git found: $(git --version)"
 }
 
-# --- Bun ---
-Write-Step 'Checking for Bun...'
-if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
-    Write-Host 'Bun not found. Installing...'
-    irm bun.sh/install.ps1 | iex
+# --- Node ---
+Write-Step 'Checking for Node.js...'
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host 'Node.js not found. Installing via winget...'
+    winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
     # Refresh PATH
     $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
                 [System.Environment]::GetEnvironmentVariable('Path', 'User')
-    if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
-        Write-Error 'Bun installation succeeded but bun is still not on PATH. Please restart your terminal and run this script again.'
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Error 'Node.js installation succeeded but node is still not on PATH. Please restart your terminal and run this script again.'
         exit 1
     }
-    Write-Host 'Bun installed.' -ForegroundColor Green
+    Write-Host 'Node.js installed.' -ForegroundColor Green
 } else {
-    Write-Host "Bun found: $(bun --version)"
+    Write-Host "Node.js found: $(node --version)"
 }
 
 # --- Repository ---
@@ -84,11 +84,11 @@ if ($insideRepo) {
 
 # --- Dependencies ---
 Write-Step 'Installing dependencies...'
-bun install
+npm install
 
 # --- Start ---
 Write-Step 'Starting dev server...'
 Write-Host 'Errata will be available at http://localhost:7739' -ForegroundColor Green
-bun run dev
+npm run dev
 
 Pop-Location
