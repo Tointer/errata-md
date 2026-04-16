@@ -11,7 +11,15 @@ export interface LibrarianAnalysis {
   id: string
   createdAt: string
   fragmentId: string
+  /** The summary text the librarian intended to record (intent). */
   summaryUpdate: string
+  /**
+   * ID of the summary fragment this analysis contributed to (artifact).
+   * Set when the deferred-summary application creates or appends to a
+   * chapter summary fragment. Undefined for legacy analyses written before
+   * summary fragments existed.
+   */
+  summaryFragmentId?: string
   structuredSummary?: {
     events: string[]
     stateChanges: string[]

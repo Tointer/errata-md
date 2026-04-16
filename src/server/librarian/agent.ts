@@ -1,8 +1,18 @@
 import { getModel, buildProviderOptions } from '../llm/client'
 import { ToolLoopAgent, stepCountIs, type ProviderOptions } from 'ai'
 import { instructionRegistry } from '../instructions'
-import { getStory, updateStory, listFragments, getFragment, updateFragment } from '../fragments/storage'
-import { getActiveProseIds } from '../fragments/prose-chain'
+import {
+  getStory,
+  updateStory,
+  listFragments,
+  getFragment,
+  updateFragment,
+  createFragment,
+  archiveFragment,
+} from '../fragments/storage'
+import { getActiveProseIds, getProseChain } from '../fragments/prose-chain'
+import { generateFragmentId } from '@/lib/fragment-ids'
+import type { Fragment } from '../fragments/schema'
 import { withBranch } from '../fragments/branches'
 import {
   saveAnalysis,
@@ -494,9 +504,185 @@ async function runLibrarianInner(
   return analysis
 }
 
+// ── Summary-fragment helpers ─────────────────────────────────
+
+/** Characters past which a chapter summary fragment splits into an era. */
+const SUMMARY_OVERFLOW_THRESHOLD = 2000
+
+/**
+ * Walk the prose chain backward from the given prose fragment and return the
+ * nearest preceding chapter marker's fragment ID. Returns null if the prose
+ * sits before any marker (or outside the chain).
+ */
+async function findChapterForProse(
+  dataDir: string,
+  storyId: string,
+  proseId: string,
+): Promise<string | null> {
+  const chain = await getProseChain(dataDir, storyId)
+  if (!chain) return null
+  const idx = chain.entries.findIndex(e => e.active === proseId)
+  if (idx < 0) return null
+  for (let i = idx - 1; i >= 0; i--) {
+    const entry = chain.entries[i]
+    const fragment = await getFragment(dataDir, storyId, entry.active)
+    if (fragment?.type === 'marker') return fragment.id
+  }
+  return null
+}
+
+/** First un-archived summary fragment whose meta.chapterId matches, or null. */
+async function findActiveChapterSummary(
+  dataDir: string,
+  storyId: string,
+  chapterId: string | null,
+): Promise<Fragment | null> {
+  const summaries = await listFragments(dataDir, storyId, 'summary')
+  for (const f of summaries) {
+    if ((f.meta?.chapterId ?? null) === chapterId && !f.meta?.isEraSummary) {
+      return f
+    }
+  }
+  return null
+}
+
+function makeSummaryFragment(params: {
+  chapterId: string | null
+  chapterName: string
+  content: string
+  isEraSummary: boolean
+  coverageStart: string | null
+  coverageEnd: string | null
+  analysisIds: string[]
+}): Fragment {
+  const now = new Date().toISOString()
+  const nameBase = params.chapterName || 'Pre-chapter'
+  return {
+    id: generateFragmentId('summary'),
+    type: 'summary',
+    name: params.isEraSummary ? `${nameBase} — earlier` : `${nameBase} summary`,
+    description: params.isEraSummary
+      ? 'Compacted summary of earlier prose in this chapter.'
+      : 'Running summary maintained by the librarian.',
+    content: params.content,
+    tags: [],
+    refs: [],
+    sticky: false,
+    placement: 'system',
+    createdAt: now,
+    updatedAt: now,
+    order: 0,
+    meta: {
+      chapterId: params.chapterId,
+      isEraSummary: params.isEraSummary,
+      coverageStart: params.coverageStart,
+      coverageEnd: params.coverageEnd,
+      analysisIds: params.analysisIds,
+    },
+    archived: false,
+    version: 1,
+    versions: [],
+  }
+}
+
+/**
+ * If the combined content exceeds the overflow threshold, split the oldest
+ * half into a compacted era summary (separate fragment), archive the original
+ * chapter summary, and create a fresh chapter summary with the newer half.
+ * Returns the fragment that should be treated as the active chapter summary
+ * after the split (either the original untouched, or the freshly created one).
+ */
+async function appendAndMaybeSplit(
+  dataDir: string,
+  storyId: string,
+  fragment: Fragment,
+  appendText: string,
+  newAnalysisIds: string[],
+  newCoverageEnd: string,
+  chapterName: string,
+): Promise<Fragment> {
+  const combined = fragment.content
+    ? `${fragment.content}\n\n${appendText}`
+    : appendText
+
+  const existingIds = Array.isArray(fragment.meta?.analysisIds)
+    ? (fragment.meta.analysisIds as string[])
+    : []
+  const analysisIds = [...existingIds, ...newAnalysisIds]
+  const coverageStart = (fragment.meta?.coverageStart as string | null | undefined) ?? null
+  const chapterId = (fragment.meta?.chapterId as string | null | undefined) ?? null
+
+  if (combined.length <= SUMMARY_OVERFLOW_THRESHOLD) {
+    const updated: Fragment = {
+      ...fragment,
+      content: combined,
+      meta: {
+        ...fragment.meta,
+        analysisIds,
+        coverageEnd: newCoverageEnd,
+        coverageStart: coverageStart ?? (analysisIds.length > 0 ? newCoverageEnd : null),
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    await updateFragment(dataDir, storyId, updated)
+    return updated
+  }
+
+  // Split. Find a paragraph boundary near the midpoint to keep paragraphs intact.
+  const midGuess = Math.floor(combined.length * 0.5)
+  const boundary = combined.indexOf('\n\n', midGuess)
+  const splitAt = boundary > 0 ? boundary : midGuess
+  const olderHalf = combined.slice(0, splitAt).trim()
+  const newerHalf = combined.slice(splitAt).trim()
+
+  const compacted = compactSummaryByCharacters(
+    olderHalf,
+    SUMMARY_OVERFLOW_THRESHOLD,
+    Math.floor(SUMMARY_OVERFLOW_THRESHOLD * 0.75),
+  )
+
+  const eraSummary = makeSummaryFragment({
+    chapterId,
+    chapterName,
+    content: compacted,
+    isEraSummary: true,
+    coverageStart,
+    coverageEnd: null,
+    analysisIds,
+  })
+  await createFragment(dataDir, storyId, eraSummary)
+
+  await archiveFragment(dataDir, storyId, fragment.id)
+
+  const fresh = makeSummaryFragment({
+    chapterId,
+    chapterName,
+    content: newerHalf,
+    isEraSummary: false,
+    coverageStart: newCoverageEnd,
+    coverageEnd: newCoverageEnd,
+    analysisIds: [],
+  })
+  await createFragment(dataDir, storyId, fresh)
+  return fresh
+}
+
+async function nameForChapter(
+  dataDir: string,
+  storyId: string,
+  chapterId: string | null,
+): Promise<string> {
+  if (!chapterId) return 'Opening'
+  const marker = await getFragment(dataDir, storyId, chapterId)
+  return marker?.name || 'Chapter'
+}
+
 /**
  * Apply summaries from analyses whose fragments are now old enough
  * (past the summarization threshold from the end of the prose chain).
+ *
+ * Writes to summary fragments grouped by chapter. Also dual-writes the
+ * legacy story.summary field during the transition — phase 3 drops that.
  */
 async function applyDeferredSummaries(
   dataDir: string,
@@ -534,8 +720,14 @@ async function applyDeferredSummaries(
   // Load latest analysis IDs by fragment from index
   const analysisByFragment = await getLatestAnalysisIdsByFragment(dataDir, storyId)
 
-  // Collect summaries in prose-chain order, stopping at first gap.
-  const summaryParts: string[] = []
+  // Collect items in prose-chain order, stopping at first gap.
+  type PendingItem = {
+    proseId: string
+    analysisId: string
+    text: string
+    chapterId: string | null
+  }
+  const items: PendingItem[] = []
   let lastAppliedId: string | null = state.summarizedUpTo
 
   for (let i = startIndex; i < cutoffIndex; i++) {
@@ -559,38 +751,97 @@ async function applyDeferredSummaries(
       break
     }
 
-    summaryParts.push(update)
+    const chapterId = await findChapterForProse(dataDir, storyId, proseId)
+    items.push({ proseId, analysisId, text: update, chapterId })
     lastAppliedId = proseId
   }
 
-  if (summaryParts.length === 0) {
+  if (items.length === 0) {
     requestLogger.debug('No summaries to apply from deferred batch')
     return
   }
 
-  // Apply all collected summaries at once
-  const currentStory = await getStory(dataDir, storyId)
-  if (!currentStory) return
-
-  const separator = currentStory.summary ? ' ' : ''
-  const summaryCompact = resolveSummaryCompact(currentStory)
-  const combinedSummary = currentStory.summary + separator + summaryParts.join(' ')
-  const compactedSummary = await compactSummary(
-    dataDir,
-    storyId,
-    combinedSummary,
-    summaryCompact.maxCharacters,
-    summaryCompact.targetCharacters,
-    requestLogger,
-    buildProviderOptions(currentStory.settings.disableThinking ?? false),
-  )
-
-  const updatedStory = {
-    ...currentStory,
-    summary: compactedSummary,
-    updatedAt: new Date().toISOString(),
+  // Group by chapter (preserving first-seen order so pre-chapter items
+  // group ahead of the first real chapter).
+  const byChapter = new Map<string | null, PendingItem[]>()
+  for (const item of items) {
+    const list = byChapter.get(item.chapterId)
+    if (list) list.push(item)
+    else byChapter.set(item.chapterId, [item])
   }
-  await updateStory(dataDir, updatedStory)
+
+  const fragmentAssignments = new Map<string, string>() // analysisId → summaryFragmentId
+
+  for (const [chapterId, chapterItems] of byChapter) {
+    const chapterName = await nameForChapter(dataDir, storyId, chapterId)
+    const existing = await findActiveChapterSummary(dataDir, storyId, chapterId)
+
+    const appendText = chapterItems.map(i => i.text).join('\n\n')
+    const newAnalysisIds = chapterItems.map(i => i.analysisId)
+    const coverageEnd = chapterItems[chapterItems.length - 1].proseId
+
+    let active: Fragment
+    if (existing) {
+      active = await appendAndMaybeSplit(
+        dataDir,
+        storyId,
+        existing,
+        appendText,
+        newAnalysisIds,
+        coverageEnd,
+        chapterName,
+      )
+    } else {
+      const fresh = makeSummaryFragment({
+        chapterId,
+        chapterName,
+        content: appendText,
+        isEraSummary: false,
+        coverageStart: chapterItems[0].proseId,
+        coverageEnd,
+        analysisIds: newAnalysisIds,
+      })
+      await createFragment(dataDir, storyId, fresh)
+      active = fresh
+    }
+
+    for (const item of chapterItems) {
+      fragmentAssignments.set(item.analysisId, active.id)
+    }
+  }
+
+  // Update each contributing analysis with the fragment it ended up in.
+  for (const item of items) {
+    const fragmentId = fragmentAssignments.get(item.analysisId)
+    if (!fragmentId) continue
+    const analysis = await getAnalysis(dataDir, storyId, item.analysisId)
+    if (!analysis) continue
+    if (analysis.summaryFragmentId === fragmentId) continue
+    await saveAnalysis(dataDir, storyId, { ...analysis, summaryFragmentId: fragmentId })
+  }
+
+  // Legacy dual-write: keep story.summary populated for readers that
+  // haven't migrated yet. Phase 3 removes this block.
+  const currentStory = await getStory(dataDir, storyId)
+  if (currentStory) {
+    const separator = currentStory.summary ? ' ' : ''
+    const summaryCompact = resolveSummaryCompact(currentStory)
+    const combinedSummary = currentStory.summary + separator + items.map(i => i.text).join(' ')
+    const compactedSummary = await compactSummary(
+      dataDir,
+      storyId,
+      combinedSummary,
+      summaryCompact.maxCharacters,
+      summaryCompact.targetCharacters,
+      requestLogger,
+      buildProviderOptions(currentStory.settings.disableThinking ?? false),
+    )
+    await updateStory(dataDir, {
+      ...currentStory,
+      summary: compactedSummary,
+      updatedAt: new Date().toISOString(),
+    })
+  }
 
   // Update state with new watermark
   const currentState = await getState(dataDir, storyId)
@@ -600,8 +851,9 @@ async function applyDeferredSummaries(
   })
 
   requestLogger.info('Deferred summaries applied', {
-    count: summaryParts.length,
+    count: items.length,
     summarizedUpTo: lastAppliedId,
-    totalSummaryLength: summaryParts.join(' ').length,
+    totalSummaryLength: items.reduce((n, x) => n + x.text.length, 0),
+    chapters: byChapter.size,
   })
 }
