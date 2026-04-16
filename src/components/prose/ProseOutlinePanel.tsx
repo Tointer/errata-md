@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { Bookmark, ArrowUpDown, GripVertical } from 'lucide-react'
+import { Bookmark, ArrowUpDown, ArrowDown, GripVertical } from 'lucide-react'
 import type { Fragment } from '@/lib/api'
 
 interface ProseOutlinePanelProps {
@@ -285,6 +285,19 @@ export function ProseOutlinePanel({
               })}
             </div>
 
+            {/* Jump-to-latest footer — hidden when the writer is already at the end */}
+            {fragments.length > 1 && activeIndex < fragments.length - 1 && (
+              <div className="shrink-0 border-t border-border/30 px-3 py-2">
+                <button
+                  onClick={() => onJump(fragments.length - 1)}
+                  className="w-full flex items-center justify-center gap-1.5 text-[0.6875rem] font-display italic text-muted-foreground/80 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:text-foreground"
+                >
+                  <ArrowDown className="size-2.5" aria-hidden />
+                  <span>jump to the latest</span>
+                </button>
+              </div>
+            )}
+
           </>
         ) : (
           /* --- Collapsed rail view --- */
@@ -338,6 +351,21 @@ export function ProseOutlinePanel({
                 )
               })}
             </div>
+
+            {/* Collapsed rail — jump-to-latest arrow when not already at the end */}
+            {fragments.length > 1 && activeIndex < fragments.length - 1 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => onJump(fragments.length - 1)}
+                    className="shrink-0 flex items-center justify-center w-7 h-6 border-t border-border/30 text-muted-foreground/60 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:text-foreground"
+                  >
+                    <ArrowDown className="size-3" aria-hidden />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="text-[0.625rem]">Jump to the latest</TooltipContent>
+              </Tooltip>
+            )}
 
           </>
         )}
