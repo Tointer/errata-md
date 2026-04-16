@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Fragment, ProseChain, StoryMeta } from '@/server/fragments/schema'
@@ -28,6 +28,10 @@ import {
   upsertFragmentInternalRecord,
 } from './fragment-internals'
 import { serializeStoryMeta, storyMetaFromMarkdown } from './story-meta'
+import { registry } from '../fragments/registry'
+import { createLogger } from '../logging/logger'
+
+const repositoryLogger = createLogger('md-repository')
 
 function optionalList<T>(value: T[]): T[] | undefined {
   return value.length > 0 ? value : undefined
@@ -35,6 +39,11 @@ function optionalList<T>(value: T[]): T[] | undefined {
 
 function optionalRecord(value: Record<string, unknown>): Record<string, unknown> | undefined {
   return Object.keys(value).length > 0 ? value : undefined
+}
+
+function resolveSticky(type: string, attributes: Record<string, unknown>): boolean {
+  if (typeof attributes.sticky === 'boolean') return attributes.sticky
+  return registry.getType(type)?.stickyByDefault ?? false
 }
 
 function serializeFragment(fragment: Fragment): string {
@@ -90,7 +99,7 @@ function fragmentFromLegacyMarkdown(
     content: body,
     tags: Array.isArray(attributes.tags) ? attributes.tags.filter((value): value is string => typeof value === 'string') : [],
     refs: Array.isArray(attributes.refs) ? attributes.refs.filter((value): value is string => typeof value === 'string') : [],
-    sticky: Boolean(attributes.sticky),
+    sticky: resolveSticky(attributes.type, attributes),
     placement: attributes.placement === 'system' ? 'system' : 'user',
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
@@ -118,7 +127,7 @@ function visibleFragmentFromMarkdown(
     content: body,
     tags: Array.isArray(attributes.tags) ? attributes.tags.filter((value): value is string => typeof value === 'string') : [],
     refs: Array.isArray(attributes.refs) ? attributes.refs.filter((value): value is string => typeof value === 'string') : [],
-    sticky: Boolean(attributes.sticky),
+    sticky: resolveSticky(type, attributes),
     placement: attributes.placement === 'system' ? 'system' : 'user',
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
@@ -220,9 +229,15 @@ export async function syncStoryMarkdownMeta(dataDir: string, story: StoryMeta): 
 export async function loadMarkdownStoryMeta(dataDir: string, storyId: string): Promise<StoryMeta | null> {
   const path = getStoryMetaPath(dataDir, storyId)
   if (!existsSync(path)) return null
-  const raw = await readFile(path, 'utf-8')
+  const [raw, fileStats] = await Promise.all([
+    readFile(path, 'utf-8'),
+    stat(path),
+  ])
   const parsed = parseFrontmatter(raw)
-  return storyMetaFromMarkdown(parsed.attributes, parsed.body)
+  return storyMetaFromMarkdown(parsed.attributes, parsed.body, {
+    createdAt: fileStats.birthtime.toISOString(),
+    updatedAt: fileStats.mtime.toISOString(),
+  })
 }
 
 async function readCurrentProseChain(dataDir: string, storyId: string): Promise<ProseChain | null> {
@@ -312,6 +327,7 @@ export async function listMarkdownFragments(
   const folders = type ? [getFragmentFolder(type)] : [...MARKDOWN_FRAGMENT_DIRS]
   const fragments: Fragment[] = []
   const internalIndex = await readFragmentInternalIndex(dataDir, storyId)
+  const storyLogger = repositoryLogger.child({ storyId, extra: type ? { type } : undefined })
 
   for (const folder of folders) {
     const folderPath = join(root, folder)
@@ -340,7 +356,14 @@ export async function listMarkdownFragments(
           ? visibleFragmentFromMarkdown(visibleType, entry, parsed.attributes, parsed.body, internalIndex[visibleId ?? ''])
           : fragmentFromLegacyMarkdown(parsed.attributes, parsed.body, legacyId ? internalIndex[legacyId] : undefined)
 
-      if (!fragment) continue
+      if (!fragment) {
+        storyLogger.warn('Skipped invalid markdown fragment', {
+          folder,
+          path: record.path,
+          entry,
+        })
+        continue
+      }
       if (type && fragment.type !== type) continue
       fragments.push(fragment)
     }

@@ -7,6 +7,42 @@ import {
   getLegacyProseFragmentIndexPath,
 } from './paths'
 import { buildProseInternalFields, type ProseFragmentInternalFields } from './prose-metadata'
+import { createLogger } from '../logging/logger'
+import { writeJsonAtomic } from '../fs-utils'
+
+const logger = createLogger('fragment-internals')
+const pendingStoryIndexWrites = new Map<string, Promise<void>>()
+
+function getStoryIndexWriteKey(dataDir: string, storyId: string): string {
+  return `${dataDir}::${storyId}`
+}
+
+async function enqueueStoryIndexWrite<T>(
+  dataDir: string,
+  storyId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const key = getStoryIndexWriteKey(dataDir, storyId)
+  const previous = pendingStoryIndexWrites.get(key) ?? Promise.resolve()
+  let result!: T
+
+  const next = previous
+    .catch(() => {})
+    .then(async () => {
+      result = await operation()
+    })
+
+  pendingStoryIndexWrites.set(key, next)
+
+  try {
+    await next
+    return result
+  } finally {
+    if (pendingStoryIndexWrites.get(key) === next) {
+      pendingStoryIndexWrites.delete(key)
+    }
+  }
+}
 
 export interface FragmentInternalRecord {
   createdAt: string
@@ -50,8 +86,17 @@ async function readLegacyProseFragmentIndex(
 ): Promise<Record<string, FragmentInternalRecord>> {
   const legacyPath = getLegacyProseFragmentIndexPath(dataDir, storyId)
   if (!existsSync(legacyPath)) return {}
-  const raw = await readFile(legacyPath, 'utf-8')
-  return migrateLegacyProseIndex(JSON.parse(raw) as Record<string, LegacyProseFragmentInternalRecord>)
+  try {
+    const raw = await readFile(legacyPath, 'utf-8')
+    return migrateLegacyProseIndex(JSON.parse(raw) as Record<string, LegacyProseFragmentInternalRecord>)
+  } catch (error) {
+    logger.warn('Failed to parse legacy prose fragment index; continuing without it', {
+      storyId,
+      path: legacyPath,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return {}
+  }
 }
 
 export async function readFragmentInternalIndex(
@@ -59,9 +104,18 @@ export async function readFragmentInternalIndex(
   storyId: string,
 ): Promise<Record<string, FragmentInternalRecord>> {
   const indexPath = getFragmentInternalIndexPath(dataDir, storyId)
-  const current = existsSync(indexPath)
-    ? JSON.parse(await readFile(indexPath, 'utf-8')) as Record<string, FragmentInternalRecord>
-    : {}
+  let current: Record<string, FragmentInternalRecord> = {}
+  if (existsSync(indexPath)) {
+    try {
+      current = JSON.parse(await readFile(indexPath, 'utf-8')) as Record<string, FragmentInternalRecord>
+    } catch (error) {
+      logger.warn('Failed to parse fragment internal index; continuing with empty index', {
+        storyId,
+        path: indexPath,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
   const legacy = await readLegacyProseFragmentIndex(dataDir, storyId)
 
   if (Object.keys(legacy).length === 0) return current
@@ -78,7 +132,7 @@ async function writeFragmentInternalIndex(
   index: Record<string, FragmentInternalRecord>,
 ): Promise<void> {
   await mkdir(getInternalStoryRoot(dataDir, storyId), { recursive: true })
-  await writeFile(getFragmentInternalIndexPath(dataDir, storyId), JSON.stringify(index, null, 2), 'utf-8')
+  await writeJsonAtomic(getFragmentInternalIndexPath(dataDir, storyId), index)
   await rm(getLegacyProseFragmentIndexPath(dataDir, storyId), { force: true })
 }
 
@@ -106,9 +160,11 @@ export async function upsertFragmentInternalRecord(
   storyId: string,
   fragment: Fragment,
 ): Promise<void> {
-  const index = await readFragmentInternalIndex(dataDir, storyId)
-  index[fragment.id] = buildFragmentInternalRecord(fragment)
-  await writeFragmentInternalIndex(dataDir, storyId, index)
+  await enqueueStoryIndexWrite(dataDir, storyId, async () => {
+    const index = await readFragmentInternalIndex(dataDir, storyId)
+    index[fragment.id] = buildFragmentInternalRecord(fragment)
+    await writeFragmentInternalIndex(dataDir, storyId, index)
+  })
 }
 
 export async function removeFragmentInternalRecord(
@@ -116,8 +172,10 @@ export async function removeFragmentInternalRecord(
   storyId: string,
   fragmentId: string,
 ): Promise<void> {
-  const index = await readFragmentInternalIndex(dataDir, storyId)
-  if (!(fragmentId in index)) return
-  delete index[fragmentId]
-  await writeFragmentInternalIndex(dataDir, storyId, index)
+  await enqueueStoryIndexWrite(dataDir, storyId, async () => {
+    const index = await readFragmentInternalIndex(dataDir, storyId)
+    if (!(fragmentId in index)) return
+    delete index[fragmentId]
+    await writeFragmentInternalIndex(dataDir, storyId, index)
+  })
 }

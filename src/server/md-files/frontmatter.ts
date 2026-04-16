@@ -16,7 +16,39 @@ export function parseFrontmatter(raw: string): { attributes: Record<string, unkn
 
   const closingIndex = normalized.indexOf('\n---\n', 4)
   if (closingIndex === -1) {
-    return { attributes: {}, body: normalized }
+    const lines = normalized.split('\n')
+    const headerLines: string[] = []
+    let bodyStartIndex = lines.length
+
+    for (let index = 1; index < lines.length; index += 1) {
+      const line = lines[index]
+      if (/^[A-Za-z0-9_-]+\s*:/.test(line)) {
+        headerLines.push(line)
+        continue
+      }
+
+      bodyStartIndex = index
+      break
+    }
+
+    const attributes: Record<string, unknown> = {}
+    for (const line of headerLines) {
+      const separator = line.indexOf(':')
+      if (separator === -1) continue
+      const key = line.slice(0, separator).trim()
+      const valueText = line.slice(separator + 1).trim()
+      if (!key) continue
+      try {
+        attributes[key] = JSON.parse(valueText)
+      } catch {
+        attributes[key] = valueText
+      }
+    }
+
+    return {
+      attributes,
+      body: lines.slice(bodyStartIndex).join('\n'),
+    }
   }
 
   const header = normalized.slice(4, closingIndex)

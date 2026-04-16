@@ -941,18 +941,6 @@ function StoryCard({ story, onDelete }: { story: StoryMeta; onDelete: () => void
   const coverInputRef = useRef<HTMLInputElement>(null)
   const { theme } = useTheme()
 
-  const { data: fragments } = useQuery({
-    queryKey: ['fragments', story.id],
-    queryFn: () => api.fragments.list(story.id),
-    staleTime: 30_000,
-  })
-
-  const { data: proseChain } = useQuery({
-    queryKey: ['proseChain', story.id],
-    queryFn: () => api.proseChain.get(story.id),
-    staleTime: 30_000,
-  })
-
   const updateCoverMutation = useMutation({
     mutationFn: (coverImage: string | null) =>
       api.stories.update(story.id, {
@@ -977,12 +965,7 @@ function StoryCard({ story, onDelete }: { story: StoryMeta; onDelete: () => void
   }, [updateCoverMutation])
 
   // Compute stats from fragments
-  const stats = fragments ? {
-    prose: proseChain?.entries.length ?? 0,
-    characters: fragments.filter(f => f.type === 'character').length,
-    knowledge: fragments.filter(f => f.type === 'knowledge').length,
-    guidelines: fragments.filter(f => f.type === 'guideline').length,
-  } : null
+  const stats = null
 
   const hasStats = stats && (stats.prose + stats.characters + stats.knowledge + stats.guidelines) > 0
   const hasCover = !!story.coverImage
