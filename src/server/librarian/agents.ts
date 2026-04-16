@@ -26,7 +26,6 @@ import {
   createOptimizeCharacterBlocks,
   buildOptimizeCharacterPreviewContext,
 } from './blocks'
-import { SUMMARY_COMPACTION_PROMPT } from './agent'
 
 const AnalyzeInputSchema = z.object({
   fragmentId: z.string(),
@@ -130,7 +129,6 @@ export function registerLibrarianAgents(): void {
   instructionRegistry.registerDefault('librarian.refine.system', REFINE_SYSTEM_PROMPT)
   instructionRegistry.registerDefault('librarian.optimize-character.system', OPTIMIZE_CHARACTER_SYSTEM_PROMPT)
   instructionRegistry.registerDefault('librarian.prose-transform.system', PROSE_TRANSFORM_SYSTEM_PROMPT)
-  instructionRegistry.registerDefault('librarian.summary-compaction', SUMMARY_COMPACTION_PROMPT)
 
   // Agent definitions
   agentRegistry.register(analyzeDefinition)

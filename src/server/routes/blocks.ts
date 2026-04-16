@@ -1,107 +1,28 @@
 import { Elysia } from 'elysia'
 import { getStory } from '../fragments/storage'
-import { buildContextState, createDefaultBlocks, compileBlocks, expandMessagesFragmentTags } from '../llm/context-builder'
-import { getBlockConfig, saveBlockConfig, addCustomBlock, updateCustomBlock, deleteCustomBlock, updateBlockOverrides } from '../blocks/storage'
-import { applyBlockConfig } from '../blocks/apply'
+import { buildContextState } from '../llm/context-builder'
 import { createScriptHelpers } from '../blocks/script-context'
-import { CustomBlockDefinitionSchema, BlockConfigSchema } from '../blocks/schema'
-import type { BlockOverride, BlockConfig } from '../blocks/schema'
-import { agentBlockRegistry } from '../agents/agent-block-registry'
 import { ensureCoreAgentsRegistered } from '../agents/register-core'
+import { agentBlockRegistry } from '../agents/agent-block-registry'
 import { getAgentBlockConfig, saveAgentBlockConfig, type AgentBlockConfig } from '../agents/agent-block-storage'
 
+/**
+ * Block-related routes that are NOT scoped to a specific agent.
+ *
+ * Historical note: this module used to host the legacy generation-wide
+ * block config (`GET /blocks`, `PATCH /blocks/config`, `POST/PUT/DELETE
+ * /blocks/custom`, `GET /blocks/preview`). Those endpoints were deleted
+ * when per-agent block configuration via `/agent-blocks/:agentName` became
+ * the single source of truth for generation-writer blocks. The routes
+ * that remain here are shared utilities:
+ *
+ *   - POST /blocks/eval-script — used by the script-block editor to
+ *     evaluate a snippet against the current context
+ *   - GET  /export-configs    — bundles every agent's block config
+ *   - POST /import-configs    — restores agent block configs from a bundle
+ */
 export function blockRoutes(dataDir: string) {
   return new Elysia({ detail: { tags: ['Blocks'] } })
-    .get('/stories/:storyId/blocks', async ({ params, set }) => {
-      ensureCoreAgentsRegistered()
-
-      const story = await getStory(dataDir, params.storyId)
-      if (!story) {
-        set.status = 404
-        return { error: 'Story not found' }
-      }
-
-      const config = await getBlockConfig(dataDir, params.storyId)
-
-      const ctxState = await buildContextState(dataDir, params.storyId, '(preview)')
-      const defaultBlocks = createDefaultBlocks(ctxState)
-
-      const builtinBlocks = defaultBlocks.map(b => ({
-        id: b.id,
-        role: b.role,
-        order: b.order,
-        source: b.source,
-        content: b.content,
-        contentPreview: b.content.slice(0, 200),
-      }))
-      return { config, builtinBlocks }
-    }, { detail: { summary: 'Get block config and builtin block metadata' } })  
-
-    .get('/stories/:storyId/blocks/preview', async ({ params, set }) => {
-      ensureCoreAgentsRegistered()
-
-      const story = await getStory(dataDir, params.storyId)
-      if (!story) {
-        set.status = 404
-        return { error: 'Story not found' }
-      }
-      const ctxState = await buildContextState(dataDir, params.storyId, '(preview)')
-      let blocks = createDefaultBlocks(ctxState)
-      const blockConfig = await getBlockConfig(dataDir, params.storyId)
-      blocks = await applyBlockConfig(blocks, blockConfig, {
-        ...ctxState,
-        ...createScriptHelpers(dataDir, params.storyId),
-      })
-      let messages = compileBlocks(blocks)
-      messages = await expandMessagesFragmentTags(messages, dataDir, params.storyId)
-      const blocksMeta = blocks
-        .sort((a, b) => {
-          if (a.role !== b.role) return a.role === 'system' ? -1 : 1
-          return a.order - b.order
-        })
-        .map(b => ({ id: b.id, name: b.name ?? b.id, role: b.role }))
-      return { messages, blocks: blocksMeta, blockCount: blocks.length }
-    }, { detail: { summary: 'Compile and preview assembled context blocks' } })
-
-    .post('/stories/:storyId/blocks/custom', async ({ params, body, set }) => {
-      const story = await getStory(dataDir, params.storyId)
-      if (!story) {
-        set.status = 404
-        return { error: 'Story not found' }
-      }
-      const parsed = CustomBlockDefinitionSchema.safeParse(body)
-      if (!parsed.success) {
-        set.status = 422
-        return { error: 'Invalid block definition', details: parsed.error.issues }
-      }
-      const config = await addCustomBlock(dataDir, params.storyId, parsed.data)
-      return config
-    }, { detail: { summary: 'Create a custom block' } })
-
-    .put('/stories/:storyId/blocks/custom/:blockId', async ({ params, body, set }) => {
-      const story = await getStory(dataDir, params.storyId)
-      if (!story) {
-        set.status = 404
-        return { error: 'Story not found' }
-      }
-      const config = await updateCustomBlock(dataDir, params.storyId, params.blockId, body as Record<string, unknown>)
-      if (!config) {
-        set.status = 404
-        return { error: 'Custom block not found' }
-      }
-      return config
-    }, { detail: { summary: 'Update a custom block' } })
-
-    .delete('/stories/:storyId/blocks/custom/:blockId', async ({ params, set }) => {
-      const story = await getStory(dataDir, params.storyId)
-      if (!story) {
-        set.status = 404
-        return { error: 'Story not found' }
-      }
-      const config = await deleteCustomBlock(dataDir, params.storyId, params.blockId)
-      return config
-    }, { detail: { summary: 'Delete a custom block' } })
-
     .post('/stories/:storyId/blocks/eval-script', async ({ params, body, set }) => {
       const story = await getStory(dataDir, params.storyId)
       if (!story) {
@@ -132,34 +53,12 @@ export function blockRoutes(dataDir: string) {
       }
     }, { detail: { summary: 'Evaluate a script in block context' } })
 
-    .patch('/stories/:storyId/blocks/config', async ({ params, body, set }) => {
-      const story = await getStory(dataDir, params.storyId)
-      if (!story) {
-        set.status = 404
-        return { error: 'Story not found' }
-      }
-      const { overrides, blockOrder } = body as { overrides?: Record<string, unknown>; blockOrder?: string[] }
-      const config = await updateBlockOverrides(
-        dataDir,
-        params.storyId,
-        (overrides ?? {}) as Record<string, BlockOverride>,
-        blockOrder,
-      )
-      return config
-    }, { detail: { summary: 'Update block overrides and ordering' } })
-
     .get('/stories/:storyId/export-configs', async ({ params, set }) => {
       const story = await getStory(dataDir, params.storyId)
       if (!story) {
         set.status = 404
         return { error: 'Story not found' }
       }
-
-      const blockConfig = await getBlockConfig(dataDir, params.storyId)
-      const isBlockEmpty =
-        blockConfig.customBlocks.length === 0 &&
-        Object.keys(blockConfig.overrides).length === 0 &&
-        blockConfig.blockOrder.length === 0
 
       ensureCoreAgentsRegistered()
       const agentDefs = agentBlockRegistry.list()
@@ -176,11 +75,8 @@ export function blockRoutes(dataDir: string) {
         }
       }
 
-      return {
-        ...(isBlockEmpty ? {} : { blockConfig }),
-        ...(Object.keys(agentBlockConfigs).length > 0 ? { agentBlockConfigs } : {}),
-      }
-    }, { detail: { summary: 'Export block and agent configs' } })
+      return Object.keys(agentBlockConfigs).length > 0 ? { agentBlockConfigs } : {}
+    }, { detail: { summary: 'Export every agent\'s block config' } })
 
     .post('/stories/:storyId/import-configs', async ({ params, body, set }) => {
       const story = await getStory(dataDir, params.storyId)
@@ -189,16 +85,11 @@ export function blockRoutes(dataDir: string) {
         return { error: 'Story not found' }
       }
 
-      const { blockConfig, agentBlockConfigs } = body as {
-        blockConfig?: BlockConfig
+      // Legacy payloads may carry a top-level `blockConfig`; it's silently
+      // ignored because the storage it targeted no longer exists.
+      const { agentBlockConfigs } = body as {
+        blockConfig?: unknown
         agentBlockConfigs?: Record<string, AgentBlockConfig>
-      }
-
-      if (blockConfig) {
-        const parsed = BlockConfigSchema.safeParse(blockConfig)
-        if (parsed.success) {
-          await saveBlockConfig(dataDir, params.storyId, parsed.data)
-        }
       }
 
       if (agentBlockConfigs) {
@@ -208,5 +99,5 @@ export function blockRoutes(dataDir: string) {
       }
 
       return { ok: true }
-    }, { detail: { summary: 'Import block and agent configs' } })
+    }, { detail: { summary: 'Import agent block configs' } })
 }

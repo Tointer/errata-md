@@ -285,15 +285,18 @@ function ExpandedScriptView({
     return () => { document.body.style.overflow = prev }
   }, [])
 
-  const previewQueryKey = context?.type === 'agent'
-    ? ['agent-block-preview', storyId, context.agentName] as const
-    : ['block-preview', storyId] as const
+  // All context previews route through the per-agent preview API. Generation
+  // blocks are just the generation.writer agent's config — they always were —
+  // so the client resolves 'generation' context to that agent name.
+  const previewAgentName = context?.type === 'agent'
+    ? context.agentName
+    : 'generation.writer'
+
+  const previewQueryKey = ['agent-block-preview', storyId, previewAgentName] as const
 
   const { data: preview, isFetching: previewLoading, refetch: refetchPreview } = useQuery<BlockPreviewResponse>({
     queryKey: previewQueryKey,
-    queryFn: () => context?.type === 'agent'
-      ? api.agentBlocks.preview(storyId, context.agentName)
-      : api.blocks.preview(storyId),
+    queryFn: () => api.agentBlocks.preview(storyId, previewAgentName),
     enabled: canShowContext && showContext,
     staleTime: 0,
   })

@@ -686,12 +686,12 @@ export function SettingsPanel({
           </SettingsGroup>
 
           <SettingsGroup title="Context" description="How the prompt is assembled before generation starts.">
-            <SettingRow label="Prompt control" description="Advanced mode enables Agent configuration and fragment ordering" helpTopic="settings#prompt-control">
+            <SettingRow label="Fragment ordering" description="Grouped bundles fragments by type. Custom unlocks the Fragment Order panel for drag-and-drop sequencing." helpTopic="settings#prompt-control">
               <SegmentedControl
                 value={story.settings.contextOrderMode ?? 'simple'}
                 options={[
-                  { value: 'simple', label: 'Simple' },
-                  { value: 'advanced', label: 'Advanced' },
+                  { value: 'simple', label: 'Grouped' },
+                  { value: 'advanced', label: 'Custom' },
                 ]}
                 onChange={(v) => updateMutation.mutate({ contextOrderMode: v })}
                 disabled={updateMutation.isPending}

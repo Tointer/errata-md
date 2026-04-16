@@ -1,6 +1,5 @@
 import { getModel, buildProviderOptions } from '../llm/client'
 import { ToolLoopAgent, stepCountIs, type ProviderOptions } from 'ai'
-import { instructionRegistry } from '../instructions'
 import {
   getStory,
   listFragments,
