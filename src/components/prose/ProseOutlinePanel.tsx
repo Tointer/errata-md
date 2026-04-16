@@ -174,6 +174,24 @@ export function ProseOutlinePanel({
               </div>
             </div>
 
+            {/* First-chapter teaching hint — shown once, while no chapter markers
+                exist in the story. Disappears the moment the first one is added. */}
+            {!fragments.some(f => f.type === 'marker') && fragments.length > 1 && (
+              <div className="shrink-0 px-4 pb-3">
+                <p className="text-[0.6875rem] font-display italic text-muted-foreground/70 leading-relaxed">
+                  No chapters yet. Add one to group your summaries and find your place.
+                </p>
+                <button
+                  onClick={() => addChapterMutation.mutate()}
+                  disabled={addChapterMutation.isPending}
+                  className="mt-1.5 text-[0.6875rem] font-display italic text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5"
+                >
+                  <Bookmark className="size-2.5" aria-hidden />
+                  <span>add first chapter</span>
+                </button>
+              </div>
+            )}
+
             {/* Scrollable list */}
             <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 px-2 pb-2">
               {(dragDisplayOrder ?? editOrder ?? fragments).map((fragment, idx) => {

@@ -26,6 +26,11 @@ interface ProseChainViewProps {
 }
 
 /** Thin hover zone between blocks that reveals a "+ Chapter" insert button */
+// An always-visible typographic break between prose blocks. The hairline +
+// italic serif label reads as a book-section ornament at rest; hovering
+// brightens both and invites a click. Anywhere along the line inserts a
+// new chapter marker at this position. Hidden adjacent to existing markers
+// so we never stack a chapter hint against a real chapter boundary.
 const InsertChapterDivider = memo(function InsertChapterDivider({
   storyId,
   position,
@@ -47,16 +52,20 @@ const InsertChapterDivider = memo(function InsertChapterDivider({
   })
 
   return (
-    <div className="group/insert relative h-3 -my-1 flex items-center justify-center">
-      <button
-        onClick={() => createMutation.mutate()}
-        disabled={createMutation.isPending}
-        className="opacity-0 group-hover/insert:opacity-100 transition-opacity duration-200 flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.625rem] text-amber-500/60 hover:text-amber-400 hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20"
-      >
-        <Bookmark className="size-2.5" />
-        <span>Chapter</span>
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={() => createMutation.mutate()}
+      disabled={createMutation.isPending}
+      aria-label="Insert chapter marker here"
+      className="group/insert w-full flex items-center gap-3 py-1.5 my-0.5 transition-opacity focus-visible:outline-none focus-visible:opacity-100"
+    >
+      <span aria-hidden className="flex-1 h-px bg-border/30 group-hover/insert:bg-primary/40 transition-colors" />
+      <span className="text-[0.6875rem] font-display italic text-muted-foreground/35 group-hover/insert:text-foreground/75 transition-colors whitespace-nowrap flex items-center gap-1.5">
+        <Bookmark className="size-2.5 text-muted-foreground/25 group-hover/insert:text-primary/70 transition-colors" aria-hidden />
+        <span>—&nbsp;chapter&nbsp;—</span>
+      </span>
+      <span aria-hidden className="flex-1 h-px bg-border/30 group-hover/insert:bg-primary/40 transition-colors" />
+    </button>
   )
 })
 
@@ -530,6 +539,8 @@ export function ProseChainView({
                   const idx = virtualItem.index
                   const sectionIdx = sectionIndexMap.get(fragment.id) ?? -1
                   const stableKey = sectionIdx >= 0 ? `section-${sectionIdx}` : fragment.id
+                  const isMarker = fragment.type === 'marker'
+                  const nextIsMarker = orderedItems[idx + 1]?.type === 'marker'
                   return (
                     <div
                       key={stableKey}
@@ -544,8 +555,8 @@ export function ProseChainView({
                         transform: `translateY(${virtualItem.start - virtualizer.options.scrollMargin}px)`,
                       }}
                     >
-                      {idx === 0 && <InsertChapterDivider storyId={storyId} position={0} />}
-                      {fragment.type === 'marker' ? (
+                      {idx === 0 && !isMarker && <InsertChapterDivider storyId={storyId} position={0} />}
+                      {isMarker ? (
                         <ChapterMarker
                           storyId={storyId}
                           fragment={fragment}
@@ -576,7 +587,9 @@ export function ProseChainView({
                           onClickMention={handleMentionClick}
                         />
                       )}
-                      <InsertChapterDivider storyId={storyId} position={idx + 1} />
+                      {!isMarker && !nextIsMarker && (
+                        <InsertChapterDivider storyId={storyId} position={idx + 1} />
+                      )}
                     </div>
                   )
                 })}
@@ -587,10 +600,12 @@ export function ProseChainView({
                 {orderedItems.map((fragment, idx) => {
                   const sectionIdx = sectionIndexMap.get(fragment.id) ?? -1
                   const stableKey = sectionIdx >= 0 ? `section-${sectionIdx}` : fragment.id
+                  const isMarker = fragment.type === 'marker'
+                  const nextIsMarker = orderedItems[idx + 1]?.type === 'marker'
                   return (
                     <ReactFragment key={stableKey}>
-                      {idx === 0 && <InsertChapterDivider storyId={storyId} position={0} />}
-                      {fragment.type === 'marker' ? (
+                      {idx === 0 && !isMarker && <InsertChapterDivider storyId={storyId} position={0} />}
+                      {isMarker ? (
                         <ChapterMarker
                           storyId={storyId}
                           fragment={fragment}
@@ -621,7 +636,9 @@ export function ProseChainView({
                           onClickMention={handleMentionClick}
                         />
                       )}
-                      <InsertChapterDivider storyId={storyId} position={idx + 1} />
+                      {!isMarker && !nextIsMarker && (
+                        <InsertChapterDivider storyId={storyId} position={idx + 1} />
+                      )}
                     </ReactFragment>
                   )
                 })}
