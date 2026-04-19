@@ -23,7 +23,7 @@ Every fragment is a JSON object conforming to this schema. Source: `src/server/f
 | `updatedAt` | `string` | — | ISO 8601 datetime | Last modification timestamp. |
 | `order` | `integer` | `0` | — | Sort order within its type group. |
 | `meta` | `Record<string, unknown>` | `{}` | — | Arbitrary metadata. Used for generation info, import sources, visual refs, etc. |
-| `archived` | `boolean` | `false` | — | Soft-delete flag. Archived fragments are excluded from listings by default. |
+| `archived` | `boolean` | `false` | — | Runtime/API field. In this filesystem fork, archive state is inferred from whether the markdown file lives in the `Archive/` subfolder, not from a persisted fragment property. |
 | `version` | `integer` | `1` | min 1 | Current version number. Incremented on each content change. |
 | `versions` | `FragmentVersion[]` | `[]` | — | Version history snapshots. See below. |
 
@@ -305,6 +305,8 @@ Important story settings for prose generation and memory include:
 The `PUT` endpoint creates a version snapshot automatically. The `PATCH` endpoint does a string find-replace on the fragment's content.
 
 Deletion requires the fragment to be archived first (422 error otherwise).
+
+In this fork, archiving is filesystem-backed: the app moves the fragment markdown file into the `Archive/` subfolder for that fragment type, and restoring moves it back out.
 
 ### Fragment lifecycle
 

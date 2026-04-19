@@ -66,7 +66,7 @@ Replace the deferred-summary application at `applyDeferredSummaries` (~lines 480
 
 ### Archive behavior
 
-Archiving uses the existing `Fragment.archived: boolean` flag. The context builder already respects it (or should — verify). Archived summary fragments don't appear in context but stay recoverable from the archive panel.
+Archiving is filesystem-backed in this fork. A summary fragment becomes archived when its markdown file is moved into the `Archive/` subfolder for its fragment type; the runtime/API still exposes `archived` in listings, but that value is inferred from file location. Archived summary fragments don't appear in context but stay recoverable from the archive panel.
 
 ### Remove
 

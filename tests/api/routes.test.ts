@@ -275,6 +275,24 @@ describe('Fragment API routes', () => {
     expect(archivedData[0].id).toBe(created.id)
   })
 
+  it('GET /api/stories/:sid/fragments?includeArchived=true includes archived fragments inferred from storage location', async () => {
+    const created = await (
+      await apiJson(`/stories/${storyId}/fragments`, fragment)
+    ).json()
+
+    await api(`/stories/${storyId}/fragments/${created.id}/archive`, {
+      method: 'POST',
+    })
+
+    const res = await api(`/stories/${storyId}/fragments?includeArchived=true`)
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    expect(data).toHaveLength(1)
+    expect(data[0].id).toBe(created.id)
+    expect(data[0].archived).toBe(true)
+  })
+
   it('POST /api/stories/:sid/fragments/:fid/restore restores a fragment', async () => {
     const created = await (
       await apiJson(`/stories/${storyId}/fragments`, fragment)

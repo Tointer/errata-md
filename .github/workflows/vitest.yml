@@ -1,4 +1,4 @@
-name: vitest
+name: CI
 
 on:
   push:
@@ -10,7 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
-      checks: write
       contents: read
 
     steps:
@@ -24,26 +23,28 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run tests
-        id: vitest
-        run: npm run test -- --reporter=verbose --reporter=junit --outputFile=junit.xml --reporter=github-actions
+        run: npm test
 
-      # Artifacts to be consumed by the Test Results workflow (vitest-results.yml)
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-      - name: Upload test artifacts
-        if: (!cancelled())
-        uses: actions/upload-artifact@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: vitest-results
-          path: |
-            junit.xml
-          retention-days: 30
+          node-version: 22.12.0
+          cache: npm
 
-      - name: Upload Event File
-        if: (!cancelled())
-        uses: actions/upload-artifact@v4
-        with:
-          name: Event File
-          path: ${{ github.event_path }}
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build

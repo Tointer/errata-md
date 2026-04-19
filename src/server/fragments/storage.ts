@@ -140,8 +140,26 @@ export async function listFragments(
   dataDir: string,
   storyId: string,
   type?: string,
+  opts?: { includeArchived?: boolean },
 ): Promise<Fragment[]> {
-  return listMarkdownFragments(dataDir, storyId, type)
+  const active = (await listMarkdownFragments(dataDir, storyId, type)).map((fragment) => ({
+    ...fragment,
+    archived: false,
+  }))
+
+  if (!opts?.includeArchived) {
+    return active
+  }
+
+  const archived = (await listArchivedMarkdownFragments(dataDir, storyId, type)).map((fragment) => ({
+    ...fragment,
+    archived: true,
+  }))
+
+  return [...active, ...archived].sort((left, right) => {
+    if (left.order !== right.order) return left.order - right.order
+    return left.id.localeCompare(right.id)
+  })
 }
 
 export async function listArchivedFragments(
@@ -149,7 +167,10 @@ export async function listArchivedFragments(
   storyId: string,
   type?: string,
 ): Promise<Fragment[]> {
-  return listArchivedMarkdownFragments(dataDir, storyId, type)
+  return (await listArchivedMarkdownFragments(dataDir, storyId, type)).map((fragment) => ({
+    ...fragment,
+    archived: true,
+  }))
 }
 
 export async function isFragmentArchived(

@@ -35,6 +35,7 @@ import { getFrozenSections, type FrozenSection } from '../fragments/protection'
 const repositoryLogger = createLogger('md-repository')
 const MARKDOWN_EDITABLE_DELIMITER = '<!-- editable -->'
 const MARKDOWN_LEADING_FROZEN_SECTION_ID = 'fs-md-leading'
+const MARKDOWN_LEADING_FROZEN_META_KEY = '_mdLeadingFrozen'
 
 function optionalList<T>(value: T[]): T[] | undefined {
   return value.length > 0 ? value : undefined
@@ -86,7 +87,7 @@ function splitMarkdownEditableBody(body: string): {
   if (delimiterIndex === -1) {
     return {
       content: normalized,
-      leadingFrozenText: normalized.trim().length > 0 ? normalized : null,
+      leadingFrozenText: null,
     }
   }
 
@@ -103,14 +104,22 @@ function extractMarkdownFrozenMeta(type: string, body: string, meta: Record<stri
   content: string
   meta: Record<string, unknown>
 } {
+  const storedLeadingFrozen = meta[MARKDOWN_LEADING_FROZEN_META_KEY] === true
+  const { [MARKDOWN_LEADING_FROZEN_META_KEY]: _ignoredLeadingFrozen, ...metaWithoutInternalMarker } = meta
+
   if (!supportsMarkdownLeadingFreeze(type)) {
-    return { content: body, meta }
+    return { content: body, meta: metaWithoutInternalMarker }
   }
 
+  const normalizedBody = body.replace(/\r\n/g, '\n')
   const { content, leadingFrozenText } = splitMarkdownEditableBody(body)
-  const existingSections = getFrozenSections(meta)
-  const leadingSection = leadingFrozenText
-    ? [{ id: MARKDOWN_LEADING_FROZEN_SECTION_ID, text: leadingFrozenText } satisfies FrozenSection]
+  const fallbackLeadingFrozenText = type === 'guideline' && storedLeadingFrozen === false && normalizedBody.trim().length > 0
+    ? normalizedBody
+    : null
+  const effectiveLeadingFrozenText = leadingFrozenText ?? (storedLeadingFrozen ? normalizedBody : fallbackLeadingFrozenText)
+  const existingSections = getFrozenSections(metaWithoutInternalMarker)
+  const leadingSection = effectiveLeadingFrozenText
+    ? [{ id: MARKDOWN_LEADING_FROZEN_SECTION_ID, text: effectiveLeadingFrozenText } satisfies FrozenSection]
     : []
   const frozenSections = dedupeFrozenSections([
     ...leadingSection,
@@ -120,8 +129,8 @@ function extractMarkdownFrozenMeta(type: string, body: string, meta: Record<stri
   return {
     content,
     meta: frozenSections.length > 0
-      ? { ...meta, frozenSections }
-      : { ...meta, frozenSections: undefined },
+      ? { ...metaWithoutInternalMarker, frozenSections }
+      : { ...metaWithoutInternalMarker, frozenSections: undefined },
   }
 }
 
@@ -153,6 +162,7 @@ function splitFrontmatterMetaForMarkdown(type: string, fragment: Fragment): {
 
   const frontmatterMeta: Record<string, unknown> = {
     ...fragment.meta,
+    [MARKDOWN_LEADING_FROZEN_META_KEY]: leadingFrozen && leadingFrozen.text === fragment.content ? true : undefined,
     frozenSections: remainingFrozenSections.length > 0 ? remainingFrozenSections : undefined,
   }
 

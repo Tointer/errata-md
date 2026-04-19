@@ -6,6 +6,8 @@ import type { Fragment, StoryMeta } from '@/server/fragments/schema'
 import {
   createFragment,
   createStory,
+  listArchivedFragments,
+  listFragments,
   updateFragmentVersioned,
 } from '@/server/fragments/storage'
 import { addProseSection, addProseVariation } from '@/server/fragments/prose-chain'
@@ -262,6 +264,7 @@ describe('md-files repository sync', () => {
       expect(loaded?.name).toBe('Mira Vale')
       expect(loaded?.sticky).toBe(true)
       expect(loaded?.content).toBe('A former courier who memorizes whole districts by smell.')
+      expect(loaded?.meta.frozenSections).toBeUndefined()
     } finally {
       await tmp.cleanup()
     }
@@ -282,6 +285,7 @@ describe('md-files repository sync', () => {
       expect(loaded?.name).toBe('Glass Coast')
       expect(loaded?.sticky).toBe(true)
       expect(loaded?.content).toBe('The coast sings at low tide because of the buried shard fields.')
+      expect(loaded?.meta.frozenSections).toBeUndefined()
     } finally {
       await tmp.cleanup()
     }
@@ -306,6 +310,32 @@ describe('md-files repository sync', () => {
       expect(loaded?.type).toBe('guideline')
       expect(loaded?.name).toBe('Voice')
       expect(loaded?.content).toBe('Keep the tone restrained.')
+    } finally {
+      await tmp.cleanup()
+    }
+  })
+
+  it('infers archived state from the Archive subfolder', async () => {
+    const tmp = await createTempDir()
+
+    try {
+      const story = makeStory('story-archive-folder')
+      await createStory(tmp.path, story)
+
+      const archiveDir = join(getMarkdownStoryRoot(tmp.path, story.id), 'Characters', 'Archive')
+      await mkdir(archiveDir, { recursive: true })
+      await writeFile(
+        join(archiveDir, 'Mira Vale.md'),
+        'A former courier who now lives off maps and rumors.',
+        'utf-8',
+      )
+
+      expect(await listFragments(tmp.path, story.id, 'character')).toHaveLength(0)
+
+      const archived = await listArchivedFragments(tmp.path, story.id, 'character')
+      expect(archived).toHaveLength(1)
+      expect(archived[0]?.id).toBe('ch-mira-vale')
+      expect(archived[0]?.archived).toBe(true)
     } finally {
       await tmp.cleanup()
     }

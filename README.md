@@ -34,8 +34,13 @@ Current story layout is  shaped around editable files:
 
 ### Sacrifices
 - no more native story branches, but you can duplicate story folder to get similar result
-- fragments can't be marked as archived, instead you can hide them in subfolders
 - to get filesystem access, project was ported to the electron, forcing me to remove bun and use node instead
+
+### Archive behavior
+- A fragment is treated as archived when its markdown file lives inside an `Archive/` subfolder under its normal type folder.
+- Moving a file into `Guidelines/Archive/`, `Characters/Archive/`, `Lorebook/Archive/`, or `Prose/Archive/` archives it.
+- Moving it back out restores it.
+- The app surfaces that as `archived` state in listings, but the source of truth is the file location, not a persisted frontmatter flag.
 
 
 ## Markdown Formatting Rules
@@ -46,6 +51,8 @@ Errata reads visible story files directly from markdown. Supported visible folde
 - `Characters/` → character fragments
 - `Lorebook/` → knowledge fragments
 - `Prose/` → prose fragments
+
+Each of those folders may also contain an `Archive/` subfolder. Files inside that subfolder are considered archived and are excluded from normal fragment listings.
 
 #### Filename rules
 

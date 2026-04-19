@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTempDir, seedTestProvider, makeTestSettings } from '../setup'
 import {
+  archiveFragment,
   createStory,
   createFragment,
   updateFragment,
@@ -265,11 +266,7 @@ describe('summary fragments', () => {
     await runLibrarian(dataDir, storyId, 'pr-0001')
 
     const [fragment] = await listFragments(dataDir, storyId, 'summary')
-    await updateFragment(dataDir, storyId, {
-      ...fragment,
-      archived: true,
-      updatedAt: new Date().toISOString(),
-    })
+    await archiveFragment(dataDir, storyId, fragment.id)
 
     const active = await listFragments(dataDir, storyId, 'summary')
     expect(active).toHaveLength(0)

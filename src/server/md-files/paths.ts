@@ -7,7 +7,7 @@ export const STORY_OUTPUT_FILE = 'story.md'
 export const INTERNAL_DIR = '.errata'
 export const FRAGMENT_INTERNAL_INDEX_FILE = 'fragment-internals.json'
 export const LEGACY_PROSE_FRAGMENT_INDEX_FILE = 'prose-fragments.json'
-export const ARCHIVE_SUBDIR = 'Archieve'
+export const ARCHIVE_SUBDIR = 'Archive'
 
 const VISIBLE_FOLDER_BY_TYPE: Record<string, string> = {
   prose: 'Prose',

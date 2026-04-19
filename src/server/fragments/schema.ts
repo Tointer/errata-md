@@ -21,6 +21,7 @@ export const FragmentSchema = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   order: z.int().default(0),
+  archived: z.boolean().default(false),
   meta: z.record(z.string(), z.unknown()).default({}),
   version: z.int().min(1).default(1),
   versions: z.array(z.object({
@@ -55,6 +56,7 @@ export interface Fragment {
   createdAt: string
   updatedAt: string
   order: number
+  archived?: boolean
   meta: Record<string, unknown>
   version?: number
   versions?: FragmentVersion[]

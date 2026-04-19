@@ -90,7 +90,8 @@ export function fragmentRoutes(dataDir: string) {
 
     .get('/stories/:storyId/fragments', async ({ params, query }) => {
       const type = query.type as string | undefined
-      return listFragments(dataDir, params.storyId, type)
+      const includeArchived = query.includeArchived === true || query.includeArchived === 'true'
+      return listFragments(dataDir, params.storyId, type, { includeArchived })
     }, { detail: { summary: 'List fragments, optionally filtered by type' } })
 
     .get('/stories/:storyId/fragments/archived', async ({ params, query }) => {
