@@ -1,6 +1,4 @@
-import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
-import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { zipSync, unzipSync } from 'fflate'
 import { generateFragmentId } from '@/lib/fragment-ids'
 import { createStory, getStory } from './fragments/storage'
@@ -9,33 +7,21 @@ import { saveAssociations } from './fragments/associations'
 import { getBranchesIndex, getContentRoot } from './fragments/branches'
 import type { StoryMeta, Fragment, Associations, ProseChain, BranchesIndex } from './fragments/schema'
 import { parseFrontmatter } from './md-files/frontmatter'
-import { getInternalStoryRoot } from './md-files/paths'
 import { storyMetaFromMarkdown } from './md-files/story-meta'
+import {
+  getStoryDir,
+  getStoryInternalDir,
+} from './storage/paths'
+import {
+  collectDirectoryFiles,
+  ensureArchiveDir,
+  writeArchiveBytes,
+  writeArchiveJson,
+} from './story-archive-files'
 
 export interface ExportResult {
   buffer: Uint8Array
   filename: string
-}
-
-// --- Zip helpers ---
-
-/** Recursively collect all files under `dir` into the zip files map. */
-async function addDirRecursive(
-  files: Record<string, Uint8Array>,
-  dirPath: string,
-  zipPrefix: string,
-): Promise<void> {
-  if (!existsSync(dirPath)) return
-  const entries = await readdir(dirPath, { withFileTypes: true })
-  for (const entry of entries) {
-    const fullPath = join(dirPath, entry.name)
-    const zipPath = `${zipPrefix}/${entry.name}`
-    if (entry.isDirectory()) {
-      await addDirRecursive(files, fullPath, zipPath)
-    } else {
-      files[zipPath] = new Uint8Array(await readFile(fullPath))
-    }
-  }
 }
 
 // --- Export ---
@@ -44,16 +30,14 @@ export async function exportStoryAsZip(
   dataDir: string,
   storyId: string,
 ): Promise<ExportResult> {
-  const storyDir = join(dataDir, 'stories', storyId)
-  if (!existsSync(storyDir)) {
+  const storyDir = getStoryDir(dataDir, storyId)
+  const story = await getStory(dataDir, storyId)
+  if (!story) {
     throw new Error(`Story not found: ${storyId}`)
   }
 
-  const files: Record<string, Uint8Array> = {}
   const zipRoot = 'errata-story-export'
-
-  // Recursively add the entire story directory
-  await addDirRecursive(files, storyDir, zipRoot)
+  const files = await collectDirectoryFiles(storyDir, zipRoot)
 
   // Ensure branches.json reflects migrated state
   const branchesIndex = await getBranchesIndex(dataDir, storyId)
@@ -65,7 +49,6 @@ export async function exportStoryAsZip(
 
   // Read meta for filename
   let storyName = storyId
-  const story = await getStory(dataDir, storyId)
   if (story) {
     storyName = story.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50)
   }
@@ -97,6 +80,15 @@ export async function importStoryFromZip(
   const branchesKey = paths.find(
     (p) => p.endsWith('branches.json') && !p.includes('fragments/') && !p.includes('/branches/'),
   )
+  const hasBranchedContent = paths.some((path) => path.includes('/branches/'))
+  const hasMarkdownStoryTree = paths.some((path) =>
+    path.includes('/Characters/')
+    || path.includes('/Guidelines/')
+    || path.includes('/Lorebook/')
+    || path.includes('/Prose/')
+    || path.endsWith('/story.md')
+    || path.includes('/.errata/fragment-internals.json'),
+  )
 
   // Build new story meta
   const newMeta: StoryMeta = {
@@ -115,13 +107,34 @@ export async function importStoryFromZip(
   // Create story (sets up branches/main/ + branches.json)
   await createStory(dataDir, newMeta)
 
-  if (branchesKey) {
+  if (branchesKey && hasBranchedContent) {
     await importNewFormat(dataDir, newStoryId, extracted, decoder, branchesKey)
+  } else if (hasMarkdownStoryTree) {
+    await importMarkdownStoryFormat(dataDir, newStoryId, extracted, paths)
   } else {
     await importLegacyFormat(dataDir, newStoryId, extracted, paths, decoder)
   }
 
   return newMeta
+}
+
+async function importMarkdownStoryFormat(
+  dataDir: string,
+  storyId: string,
+  extracted: Record<string, Uint8Array>,
+  paths: string[],
+): Promise<void> {
+  const root = await getContentRoot(dataDir, storyId)
+  const rootPrefix = getArchiveRootPrefix(paths)
+
+  for (const [path, content] of Object.entries(extracted)) {
+    if (rootPrefix && !path.startsWith(rootPrefix)) continue
+
+    const relativePath = rootPrefix ? path.slice(rootPrefix.length) : path
+    if (!relativePath || relativePath === 'branches.json' || relativePath === '.errata/_story.md') continue
+
+    await writeArchiveBytes(join(root, relativePath), content)
+  }
 }
 
 // --- New format import (with branches/) ---
@@ -133,7 +146,7 @@ async function importNewFormat(
   decoder: TextDecoder,
   branchesKey: string,
 ): Promise<void> {
-  const storyDir = join(dataDir, 'stories', storyId)
+  const storyDir = getStoryDir(dataDir, storyId)
 
   // Read branches.json from archive
   const branchesIndex = JSON.parse(decoder.decode(extracted[branchesKey])) as BranchesIndex
@@ -149,7 +162,7 @@ async function importNewFormat(
   }
 
   // Write branches.json (overwrite the default one from createStory)
-  await writeFile(join(storyDir, 'branches.json'), JSON.stringify(branchesIndex, null, 2), 'utf-8')
+  await writeArchiveJson(join(storyDir, 'branches.json'), branchesIndex)
 
   // Write each branch
   for (const branch of branchesIndex.branches) {
@@ -157,8 +170,8 @@ async function importNewFormat(
     if (!branchPrefix) continue
 
     const bDir = join(storyDir, 'branches', branch.id)
-    await mkdir(bDir, { recursive: true })
-    await mkdir(join(bDir, 'fragments'), { recursive: true })
+    await ensureArchiveDir(bDir)
+    await ensureArchiveDir(join(bDir, 'fragments'))
 
     // Track handled paths so we can copy remaining files verbatim
     const handled = new Set<string>()
@@ -215,14 +228,13 @@ async function importLegacyFormat(
 
   // Write fragments to the active branch (main)
   const root = await getContentRoot(dataDir, storyId)
-  const internalRoot = getInternalStoryRoot(dataDir, storyId)
+  const internalRoot = getStoryInternalDir(dataDir, storyId)
   const fragmentsDir = join(internalRoot, 'fragments')
-  await mkdir(fragmentsDir, { recursive: true })
+  await ensureArchiveDir(fragmentsDir)
   for (const fragment of remappedFragments) {
-    await writeFile(
+    await writeArchiveJson(
       join(fragmentsDir, `${fragment.id}.json`),
-      JSON.stringify(fragment, null, 2),
-      'utf-8',
+      fragment,
     )
   }
 
@@ -253,13 +265,13 @@ async function importLegacyFormat(
     if (path.includes('/branches/')) continue
     handledLegacy.add(path)
     const logsDir = join(internalRoot, 'generation-logs')
-    await mkdir(logsDir, { recursive: true })
+    await ensureArchiveDir(logsDir)
     const filename = path.split('/').pop()!
     const logData = JSON.parse(decoder.decode(content))
     if (logData.fragmentId && idMap.has(logData.fragmentId)) {
       logData.fragmentId = idMap.get(logData.fragmentId)
     }
-    await writeFile(join(logsDir, filename), JSON.stringify(logData, null, 2), 'utf-8')
+    await writeArchiveJson(join(logsDir, filename), logData)
   }
 
   // Copy all remaining files verbatim (librarian, agent-blocks, block-config, etc.)
@@ -275,8 +287,7 @@ async function importLegacyFormat(
     if (relativePath === 'prose-chain.json' || relativePath === 'associations.json') continue
     if (handledLegacy.has(path)) continue
     const targetPath = join(root, normalizeLegacyStoryRelativePath(relativePath))
-    await mkdir(dirname(targetPath), { recursive: true })
-    await writeFile(targetPath, content)
+    await writeArchiveBytes(targetPath, content)
   }
 }
 
@@ -325,6 +336,14 @@ function normalizeLegacyStoryRelativePath(relativePath: string): string {
   return relativePath
 }
 
+function getArchiveRootPrefix(paths: string[]): string {
+  const firstPath = paths[0]
+  if (!firstPath) return ''
+
+  const firstSeparator = firstPath.indexOf('/')
+  return firstSeparator === -1 ? '' : firstPath.slice(0, firstSeparator + 1)
+}
+
 // --- Branch content helpers ---
 
 function findBranchPrefix(paths: string[], branchId: string): string | null {
@@ -356,10 +375,9 @@ async function writeBranchFragments(
       refs: fragment.refs.map((ref) => idMap.get(ref) ?? ref),
       meta: remapMeta(fragment.meta, idMap),
     }
-    await writeFile(
+    await writeArchiveJson(
       join(bDir, 'fragments', `${newId}.json`),
-      JSON.stringify(remapped, null, 2),
-      'utf-8',
+      remapped,
     )
   }
 }
@@ -382,7 +400,7 @@ async function writeBranchProseChain(
       active: idMap.get(entry.active) ?? entry.active,
     })),
   }
-  await writeFile(join(bDir, 'prose-chain.json'), JSON.stringify(remapped, null, 2), 'utf-8')
+  await writeArchiveJson(join(bDir, 'prose-chain.json'), remapped)
 }
 
 async function writeBranchAssociations(
@@ -398,7 +416,7 @@ async function writeBranchAssociations(
   handled.add(key)
   const assoc = JSON.parse(decoder.decode(extracted[key])) as Associations
   const remapped = remapAssociations(assoc, idMap)
-  await writeFile(join(bDir, 'associations.json'), JSON.stringify(remapped, null, 2), 'utf-8')
+  await writeArchiveJson(join(bDir, 'associations.json'), remapped)
 }
 
 async function writeBranchGenerationLogs(
@@ -418,9 +436,9 @@ async function writeBranchGenerationLogs(
       logData.fragmentId = idMap.get(logData.fragmentId)
     }
     const logsDir = join(bDir, 'generation-logs')
-    await mkdir(logsDir, { recursive: true })
+    await ensureArchiveDir(logsDir)
     const filename = path.split('/').pop()!
-    await writeFile(join(logsDir, filename), JSON.stringify(logData, null, 2), 'utf-8')
+    await writeArchiveJson(join(logsDir, filename), logData)
   }
 }
 
@@ -436,8 +454,7 @@ async function copyRemainingBranchFiles(
     if (!path.startsWith(prefix) || handled.has(path)) continue
     const relativePath = path.slice(prefix.length)
     const targetPath = join(bDir, relativePath)
-    await mkdir(dirname(targetPath), { recursive: true })
-    await writeFile(targetPath, content)
+    await writeArchiveBytes(targetPath, content)
   }
 }
 

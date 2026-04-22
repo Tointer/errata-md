@@ -21,3 +21,9 @@ export {
   syncStoryMarkdownMeta,
   writeCompiledStoryMarkdown,
 } from './repository'
+
+export {
+  getMarkdownStoryRepository,
+  setMarkdownStoryRepository,
+  type MarkdownStoryRepository,
+} from './markdown-story-repository'

@@ -1,7 +1,7 @@
 import type { ProseChain } from './schema'
 import { getProseChainFile } from '../storage/paths'
 import { getStorageBackend } from '../storage/runtime'
-import { syncCompiledStoryFromCurrentChain, syncProseMarkdownOrder } from '../md-files'
+import { getMarkdownStoryRepository } from '../md-files/markdown-story-repository'
 
 const PROSE_CHAIN_FILE = 'prose-chain.json'
 
@@ -35,10 +35,11 @@ export async function saveProseChain(
   chain: ProseChain,
 ): Promise<void> {
   const storage = getStorageBackend()
+  const markdownRepository = getMarkdownStoryRepository()
   const path = await proseChainPath(dataDir, storyId)
   await storage.writeJson(path, chain, { ensureDir: true })
-  await syncProseMarkdownOrder(dataDir, storyId)
-  await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+  await markdownRepository.syncProseOrder(dataDir, storyId)
+  await markdownRepository.syncCompiledStory(dataDir, storyId)
 }
 
 /**

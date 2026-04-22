@@ -1,19 +1,7 @@
 import type { Fragment, FragmentVersion, StoryMeta } from './schema'
 import { initBranches } from './branches'
 import { createLogger } from '../logging'
-import {
-  archiveFragmentMarkdown,
-  isMarkdownFragmentArchived,
-  loadMarkdownFragmentById,
-  loadMarkdownStoryMeta,
-  listArchivedMarkdownFragments,
-  listMarkdownFragments,
-  deleteFragmentMarkdown,
-  restoreFragmentMarkdown,
-  syncCompiledStoryFromCurrentChain,
-  syncFragmentMarkdown,
-  syncStoryMarkdownMeta,
-} from '../md-files'
+import { getMarkdownStoryRepository } from '../md-files/markdown-story-repository'
 import {
   getLegacyInternalFragmentFile,
   getLegacyStoryMetaJsonFile,
@@ -47,10 +35,11 @@ export async function createStory(
   story: StoryMeta
 ): Promise<void> {
   const storage = getStorageBackend()
+  const markdownRepository = getMarkdownStoryRepository()
   const dir = getStoryDir(dataDir, story.id)
   await storage.ensureDir(dir)
   await initBranches(dataDir, story.id)
-  await syncStoryMarkdownMeta(dataDir, story)
+  await markdownRepository.syncStory(dataDir, story)
   await removeFileIfExists(getLegacyStoryMetaJsonFile(dataDir, story.id))
 }
 
@@ -58,7 +47,7 @@ export async function getStory(
   dataDir: string,
   storyId: string
 ): Promise<StoryMeta | null> {
-  return loadMarkdownStoryMeta(dataDir, storyId)
+  return getMarkdownStoryRepository().loadStory(dataDir, storyId)
 }
 
 export async function listStories(dataDir: string): Promise<StoryMeta[]> {
@@ -79,7 +68,7 @@ export async function updateStory(
   dataDir: string,
   story: StoryMeta
 ): Promise<void> {
-  await syncStoryMarkdownMeta(dataDir, story)
+  await getMarkdownStoryRepository().syncStory(dataDir, story)
   await removeFileIfExists(getLegacyStoryMetaJsonFile(dataDir, story.id))
 }
 
@@ -101,12 +90,13 @@ export async function createFragment(
   storyId: string,
   fragment: Fragment
 ): Promise<void> {
+  const markdownRepository = getMarkdownStoryRepository()
   const normalized = normalizeFragment(fragment)
   if (normalized) {
-    await syncFragmentMarkdown(dataDir, storyId, normalized)
+    await markdownRepository.syncFragment(dataDir, storyId, normalized)
     await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, normalized.id))
     if (normalized.type === 'prose' || normalized.type === 'marker') {
-      await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+      await markdownRepository.syncCompiledStory(dataDir, storyId)
     }
   }
 }
@@ -116,7 +106,7 @@ export async function getFragment(
   storyId: string,
   fragmentId: string
 ): Promise<Fragment | null> {
-  return normalizeFragment(await loadMarkdownFragmentById(dataDir, storyId, fragmentId))
+  return normalizeFragment(await getMarkdownStoryRepository().loadFragment(dataDir, storyId, fragmentId))
 }
 
 export async function listFragments(
@@ -125,7 +115,7 @@ export async function listFragments(
   type?: string,
   opts?: { includeArchived?: boolean },
 ): Promise<Fragment[]> {
-  const active = (await listMarkdownFragments(dataDir, storyId, type)).map((fragment) => ({
+  const active = (await getMarkdownStoryRepository().listFragments(dataDir, storyId, type)).map((fragment) => ({
     ...fragment,
     archived: false,
   }))
@@ -134,7 +124,7 @@ export async function listFragments(
     return active
   }
 
-  const archived = (await listArchivedMarkdownFragments(dataDir, storyId, type)).map((fragment) => ({
+  const archived = (await getMarkdownStoryRepository().listArchivedFragments(dataDir, storyId, type)).map((fragment) => ({
     ...fragment,
     archived: true,
   }))
@@ -150,7 +140,7 @@ export async function listArchivedFragments(
   storyId: string,
   type?: string,
 ): Promise<Fragment[]> {
-  return (await listArchivedMarkdownFragments(dataDir, storyId, type)).map((fragment) => ({
+  return (await getMarkdownStoryRepository().listArchivedFragments(dataDir, storyId, type)).map((fragment) => ({
     ...fragment,
     archived: true,
   }))
@@ -161,7 +151,7 @@ export async function isFragmentArchived(
   storyId: string,
   fragmentId: string
 ): Promise<boolean> {
-  return isMarkdownFragmentArchived(dataDir, storyId, fragmentId)
+  return getMarkdownStoryRepository().isFragmentArchived(dataDir, storyId, fragmentId)
 }
 
 export async function archiveFragment(
@@ -169,13 +159,14 @@ export async function archiveFragment(
   storyId: string,
   fragmentId: string
 ): Promise<Fragment | null> {
+  const markdownRepository = getMarkdownStoryRepository()
   const fragment = await getFragment(dataDir, storyId, fragmentId)
   if (!fragment) return null
-  const moved = await archiveFragmentMarkdown(dataDir, storyId, fragmentId)
+  const moved = await markdownRepository.archiveFragment(dataDir, storyId, fragmentId)
   if (!moved) return null
   await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, fragmentId))
   if (fragment.type === 'prose' || fragment.type === 'marker') {
-    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+    await markdownRepository.syncCompiledStory(dataDir, storyId)
   }
   return fragment
 }
@@ -185,13 +176,14 @@ export async function restoreFragment(
   storyId: string,
   fragmentId: string
 ): Promise<Fragment | null> {
+  const markdownRepository = getMarkdownStoryRepository()
   const fragment = await getFragment(dataDir, storyId, fragmentId)
   if (!fragment) return null
-  const moved = await restoreFragmentMarkdown(dataDir, storyId, fragmentId)
+  const moved = await markdownRepository.restoreFragment(dataDir, storyId, fragmentId)
   if (!moved) return null
   await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, fragmentId))
   if (fragment.type === 'prose' || fragment.type === 'marker') {
-    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+    await markdownRepository.syncCompiledStory(dataDir, storyId)
   }
   return fragment
 }
@@ -201,13 +193,14 @@ export async function updateFragment(
   storyId: string,
   fragment: Fragment
 ): Promise<void> {
+  const markdownRepository = getMarkdownStoryRepository()
   const normalized = normalizeFragment(fragment)
   if (normalized) {
     requestLogger.info('Updating fragment markdown', { fragmentId: normalized.id, storyId })
-    await syncFragmentMarkdown(dataDir, storyId, normalized)
+    await markdownRepository.syncFragment(dataDir, storyId, normalized)
     await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, normalized.id))
     if (normalized.type === 'prose' || normalized.type === 'marker') {
-      await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+      await markdownRepository.syncCompiledStory(dataDir, storyId)
     }
   }
 }
@@ -270,11 +263,12 @@ export async function deleteFragment(
   storyId: string,
   fragmentId: string
 ): Promise<void> {
+  const markdownRepository = getMarkdownStoryRepository()
   const existing = await getFragment(dataDir, storyId, fragmentId)
   await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, fragmentId))
-  await deleteFragmentMarkdown(dataDir, storyId, fragmentId)
+  await markdownRepository.deleteFragment(dataDir, storyId, fragmentId)
   if (existing && (existing.type === 'prose' || existing.type === 'marker')) {
-    await syncCompiledStoryFromCurrentChain(dataDir, storyId)
+    await markdownRepository.syncCompiledStory(dataDir, storyId)
   }
 }
 
