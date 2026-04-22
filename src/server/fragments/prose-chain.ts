@@ -1,14 +1,13 @@
-import { readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import type { ProseChain } from './schema'
-import { getInternalStoryPath } from '../md-files/paths'
-import { writeJsonAtomic } from '../fs-utils'
+import { getProseChainFile } from '../storage/paths'
+import { getStorageBackend } from '../storage/runtime'
 import { syncCompiledStoryFromCurrentChain, syncProseMarkdownOrder } from '../md-files'
 
 const PROSE_CHAIN_FILE = 'prose-chain.json'
 
 async function proseChainPath(dataDir: string, storyId: string): Promise<string> {
-  return getInternalStoryPath(dataDir, storyId, PROSE_CHAIN_FILE)
+  void PROSE_CHAIN_FILE
+  return getProseChainFile(dataDir, storyId)
 }
 
 /**
@@ -19,12 +18,12 @@ export async function getProseChain(
   dataDir: string,
   storyId: string,
 ): Promise<ProseChain | null> {
+  const storage = getStorageBackend()
   const path = await proseChainPath(dataDir, storyId)
-  if (!existsSync(path)) {
+  if (!(await storage.exists(path))) {
     return null
   }
-  const raw = await readFile(path, 'utf-8')
-  return JSON.parse(raw) as ProseChain
+  return storage.readJson(path)
 }
 
 /**
@@ -35,8 +34,9 @@ export async function saveProseChain(
   storyId: string,
   chain: ProseChain,
 ): Promise<void> {
+  const storage = getStorageBackend()
   const path = await proseChainPath(dataDir, storyId)
-  await writeJsonAtomic(path, chain)
+  await storage.writeJson(path, chain, { ensureDir: true })
   await syncProseMarkdownOrder(dataDir, storyId)
   await syncCompiledStoryFromCurrentChain(dataDir, storyId)
 }

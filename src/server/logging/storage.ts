@@ -1,18 +1,17 @@
 import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
-import { existsSync } from 'node:fs'
 import type { LogEntry, LogSummary } from './types'
-import { mkdirWithRetries, readFileWithRetries, writeFileWithRetries } from '../fs-utils'
+import { getAppLogFilePath, getAppLogsDir } from '../storage/paths'
+import { getStorageBackend } from '../storage/runtime'
 
 const MAX_LOGS_PER_FILE = 1000
 const MAX_LOG_FILES = 5
 
 function logsDir(dataDir: string): string {
-  return join(process.env.GLOBAL_DATA_DIR?.trim() || dataDir, 'logs')
+  return getAppLogsDir(dataDir)
 }
 
 function logFilePath(dataDir: string, index: number): string {
-  return join(logsDir(dataDir), `app-${index}.jsonl`)
+  return getAppLogFilePath(dataDir, index)
 }
 
 /**
@@ -20,18 +19,19 @@ function logFilePath(dataDir: string, index: number): string {
  * Uses rotating log files to prevent unbounded growth.
  */
 export async function saveLogEntry(dataDir: string, entry: LogEntry): Promise<void> {
+  const storage = getStorageBackend()
   const dir = logsDir(dataDir)
-  await mkdirWithRetries(dir, { recursive: true })
+  await storage.ensureDir(dir)
 
   // Find the current log file
   let currentIndex = 0
   for (let i = 0; i < MAX_LOG_FILES; i++) {
     const path = logFilePath(dataDir, i)
-    if (!existsSync(path)) {
+    if (!(await storage.exists(path))) {
       currentIndex = i
       break
     }
-    const stats = await readFileWithRetries(path, 'utf-8')
+    const stats = await storage.readText(path)
     const lines = stats.split('\n').filter(line => line.trim())
     if (lines.length < MAX_LOGS_PER_FILE) {
       currentIndex = i
@@ -46,9 +46,9 @@ export async function saveLogEntry(dataDir: string, entry: LogEntry): Promise<vo
     for (let i = 0; i < MAX_LOG_FILES - 1; i++) {
       const oldPath = logFilePath(dataDir, i + 1)
       const newPath = logFilePath(dataDir, i)
-      if (existsSync(oldPath)) {
-        const content = await readFileWithRetries(oldPath, 'utf-8')
-        await writeFileWithRetries(newPath, content, 'utf-8')
+      if (await storage.exists(oldPath)) {
+        const content = await storage.readText(oldPath)
+        await storage.writeText(newPath, content, { ensureDir: true })
       }
     }
     currentIndex = MAX_LOG_FILES - 1
@@ -58,8 +58,8 @@ export async function saveLogEntry(dataDir: string, entry: LogEntry): Promise<vo
   const line = JSON.stringify(entry) + '\n'
   
   // Append to file
-  const existing = existsSync(path) ? await readFileWithRetries(path, 'utf-8') : ''
-  await writeFileWithRetries(path, existing + line, 'utf-8')
+  const existing = await storage.exists(path) ? await storage.readText(path) : ''
+  await storage.writeText(path, existing + line, { ensureDir: true })
 }
 
 /**
@@ -74,15 +74,16 @@ export async function listLogs(
     limit?: number
   } = {}
 ): Promise<LogSummary[]> {
+  const storage = getStorageBackend()
   const { level, component, storyId, limit = 100 } = options
   const entries: LogSummary[] = []
 
   // Read from all log files, newest first
   for (let i = MAX_LOG_FILES - 1; i >= 0; i--) {
     const path = logFilePath(dataDir, i)
-    if (!existsSync(path)) continue
+    if (!(await storage.exists(path))) continue
 
-    const content = await readFileWithRetries(path, 'utf-8')
+    const content = await storage.readText(path)
     const lines = content.split('\n').filter(line => line.trim())
 
     for (const line of lines) {
@@ -115,11 +116,12 @@ export async function listLogs(
  * Get a specific log entry by ID.
  */
 export async function getLogEntry(dataDir: string, logId: string): Promise<LogEntry | null> {
+  const storage = getStorageBackend()
   for (let i = 0; i < MAX_LOG_FILES; i++) {
     const path = logFilePath(dataDir, i)
-    if (!existsSync(path)) continue
+    if (!(await storage.exists(path))) continue
 
-    const content = await readFileWithRetries(path, 'utf-8')
+    const content = await storage.readText(path)
     const lines = content.split('\n').filter(line => line.trim())
 
     for (const line of lines) {
@@ -138,13 +140,14 @@ export async function getLogEntry(dataDir: string, logId: string): Promise<LogEn
  * Clear all application logs.
  */
 export async function clearLogs(dataDir: string): Promise<void> {
+  const storage = getStorageBackend()
   const dir = logsDir(dataDir)
-  if (!existsSync(dir)) return
+  if (!(await storage.exists(dir))) return
 
   const entries = await readdir(dir)
   for (const entry of entries) {
     if (entry.startsWith('app-') && entry.endsWith('.jsonl')) {
-      await writeFileWithRetries(join(dir, entry), '', 'utf-8')
+      await storage.writeText(logFilePath(dataDir, Number.parseInt(entry.slice(4, -6), 10)), '', { ensureDir: true })
     }
   }
 }

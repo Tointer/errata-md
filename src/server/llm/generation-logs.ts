@@ -1,8 +1,6 @@
-import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
-import { getInternalStoryPath } from '../md-files/paths'
-import { mkdirWithRetries, readFileWithRetries, writeJsonAtomic } from '../fs-utils'
+import { getStoryInternalDir } from '../storage/paths'
+import { getStorageBackend } from '../storage/runtime'
 
 export interface ToolCallLog {
   toolName: string
@@ -52,7 +50,7 @@ export interface GenerationLogSummary {
 }
 
 async function logsDir(dataDir: string, storyId: string): Promise<string> {
-  return getInternalStoryPath(dataDir, storyId, 'generation-logs')
+  return getStoryInternalDir(dataDir, storyId, 'generation-logs')
 }
 
 async function logPath(dataDir: string, storyId: string, logId: string): Promise<string> {
@@ -65,9 +63,10 @@ export async function saveGenerationLog(
   storyId: string,
   log: GenerationLog,
 ): Promise<void> {
+  const storage = getStorageBackend()
   const dir = await logsDir(dataDir, storyId)
-  await mkdirWithRetries(dir, { recursive: true })
-  await writeJsonAtomic(await logPath(dataDir, storyId, log.id), log)
+  await storage.ensureDir(dir)
+  await storage.writeJson(await logPath(dataDir, storyId, log.id), log)
 }
 
 export async function getGenerationLog(
@@ -75,26 +74,24 @@ export async function getGenerationLog(
   storyId: string,
   logId: string,
 ): Promise<GenerationLog | null> {
+  const storage = getStorageBackend()
   const path = await logPath(dataDir, storyId, logId)
-  if (!existsSync(path)) return null
-  const raw = await readFileWithRetries(path, 'utf-8')
-  return JSON.parse(raw) as GenerationLog
+  if (!(await storage.exists(path))) return null
+  return storage.readJson(path)
 }
 
 export async function listGenerationLogs(
   dataDir: string,
   storyId: string,
 ): Promise<GenerationLogSummary[]> {
+  const storage = getStorageBackend()
   const dir = await logsDir(dataDir, storyId)
-  if (!existsSync(dir)) return []
-
-  const entries = await readdir(dir)
+  const entries = await storage.listDir(dir)
   const summaries: GenerationLogSummary[] = []
 
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue
-    const raw = await readFileWithRetries(join(dir, entry), 'utf-8')
-    const log = JSON.parse(raw) as GenerationLog
+    const log = await storage.readJson<GenerationLog>(join(dir, entry))
     summaries.push({
       id: log.id,
       createdAt: log.createdAt,
