@@ -10,6 +10,7 @@
   },
   "chat.tools.terminal.autoApprove": {
     "bunx": true,
-    "bun": true
+    "bun": true,
+    "npx vitest": true
   }
 }

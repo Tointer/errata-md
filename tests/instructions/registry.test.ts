@@ -78,7 +78,7 @@ describe('InstructionRegistry', () => {
         priority: 100,
         instructions: { 'test.key': 'overridden' },
       })
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
 
       expect(instructionRegistry.resolve('test.key', 'deepseek-chat')).toBe('overridden')
       expect(instructionRegistry.resolve('test.key', 'other-model')).toBe('default')
@@ -92,7 +92,7 @@ describe('InstructionRegistry', () => {
         priority: 100,
         instructions: { 'test.key': 'regex-overridden' },
       })
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
 
       expect(instructionRegistry.resolve('test.key', 'deepseek-chat')).toBe('regex-overridden')
       expect(instructionRegistry.resolve('test.key', 'DeepSeek-V2')).toBe('regex-overridden')
@@ -113,7 +113,7 @@ describe('InstructionRegistry', () => {
         priority: 200,
         instructions: { 'test.key': 'low-priority' },
       })
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
 
       expect(instructionRegistry.resolve('test.key', 'deepseek-chat')).toBe('high-priority')
     })
@@ -127,13 +127,13 @@ describe('InstructionRegistry', () => {
         priority: 100,
         instructions: { 'test.a': 'overridden-a' },
       })
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
 
       expect(instructionRegistry.resolve('test.a', 'deepseek-chat')).toBe('overridden-a')
       expect(instructionRegistry.resolve('test.b', 'deepseek-chat')).toBe('default-b')
     })
 
-    it('loadOverridesSync reads JSON files from disk', async () => {
+    it('loadOverrides reads JSON files from disk', async () => {
       instructionRegistry.registerDefault('k1', 'default')
       await writeOverride('set1.json', {
         name: 'Set 1',
@@ -147,7 +147,7 @@ describe('InstructionRegistry', () => {
         priority: 100,
         instructions: { k1: 'from-set-2' },
       })
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
 
       expect(instructionRegistry.resolve('k1', 'model-a')).toBe('from-set-1')
       expect(instructionRegistry.resolve('k1', 'model-b')).toBe('from-set-2')
@@ -164,15 +164,15 @@ describe('InstructionRegistry', () => {
         priority: 100,
         instructions: { 'test.key': 'good' },
       })
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
 
       expect(instructionRegistry.resolve('test.key', 'model-a')).toBe('good')
     })
 
-    it('missing instruction-sets directory is handled gracefully', () => {
+    it('missing instruction-sets directory is handled gracefully', async () => {
       instructionRegistry.registerDefault('test.key', 'default')
       // No instruction-sets dir exists — should not throw
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
       expect(instructionRegistry.resolve('test.key')).toBe('default')
     })
 
@@ -183,7 +183,7 @@ describe('InstructionRegistry', () => {
         modelMatch: 'x',
         instructions: {},
       })
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
       expect(instructionRegistry.resolve('test.key')).toBe('default')
     })
 
@@ -192,7 +192,7 @@ describe('InstructionRegistry', () => {
       const dir = join(tempDir.path, 'instruction-sets')
       await mkdir(dir, { recursive: true })
       await writeFile(join(dir, 'readme.txt'), 'not json')
-      instructionRegistry.loadOverridesSync(tempDir.path)
+      await instructionRegistry.loadOverrides(tempDir.path)
       expect(instructionRegistry.resolve('test.key')).toBe('default')
     })
   })

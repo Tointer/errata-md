@@ -1,132 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createTempDir, makeTestSettings } from '../setup'
-import type { Fragment, StoryMeta } from '@/server/fragments/schema'
-import {
-  createFragment,
-  createStory,
-  listArchivedFragments,
-  listFragments,
-  updateFragmentVersioned,
-} from '@/server/fragments/storage'
-import { addProseSection, addProseVariation } from '@/server/fragments/prose-chain'
-import {
-  getCompiledStoryPath,
-  getInternalStoryRoot,
-  getMarkdownStoryRoot,
-  loadMarkdownFragmentById,
-} from '@/server/md-files'
-import { listStories } from '@/server/fragments/storage'
-import { upsertFragmentInternalRecord } from '@/server/storage/fragment-internals'
+import { describe, expect, it } from 'vitest'
+import { createTempDir } from '../setup'
+import { listStories, createFragment, createStory } from '@/server/fragments/storage'
+import { getInternalStoryRoot, getMarkdownStoryRoot, loadMarkdownFragmentById } from '@/server/md-files'
+import { makeFragment, makeStory } from './helpers'
 
-function makeStory(id: string): StoryMeta {
-  const now = new Date().toISOString()
-  return {
-    id,
-    name: 'Markdown Story',
-    description: 'Story synced to markdown files.',
-    coverImage: null,
-    summary: '',
-    createdAt: now,
-    updatedAt: now,
-    settings: makeTestSettings(),
-  }
-}
-
-function makeFragment(id: string, overrides?: Partial<Fragment>): Fragment {
-  const now = new Date().toISOString()
-  return {
-    id,
-    type: 'prose',
-    name: 'Opening',
-    description: 'The first beat',
-    content: 'It was raining over the station.',
-    tags: [],
-    refs: [],
-    sticky: false,
-    placement: 'user',
-    createdAt: now,
-    updatedAt: now,
-    order: 0,
-    meta: {},
-    version: 1,
-    versions: [],
-    ...overrides,
-  }
-}
-
-describe('md-files repository sync', () => {
-  it('creates markdown story layout and syncs setup fragments', async () => {
-    const tmp = await createTempDir()
-
-    try {
-      const story = makeStory('story-mdsync')
-      await createStory(tmp.path, story)
-
-      const guideline = makeFragment('gl-voice', {
-        type: 'guideline',
-        name: 'Voice',
-        description: 'Writing guidance',
-        content: 'Keep the prose sharp and economical.',
-        sticky: true,
-        placement: 'system',
-      })
-
-      await createFragment(tmp.path, story.id, guideline)
-
-      const root = getMarkdownStoryRoot(tmp.path, story.id)
-      const storyMeta = await readFile(join(getInternalStoryRoot(tmp.path, story.id), '_story.md'), 'utf-8')
-      expect(storyMeta).toContain('name: "Markdown Story"')
-
-      const rootEntries = (await readdir(root)).sort()
-      expect(rootEntries).toEqual(['.errata', 'Characters', 'Guidelines', 'Lorebook', 'Prose', 'story.md'])
-
-      const loaded = await loadMarkdownFragmentById(tmp.path, story.id, 'gl-voice')
-      expect(loaded?.type).toBe('guideline')
-      expect(loaded?.content).toBe('Keep the prose sharp and economical.')
-    } finally {
-      await tmp.cleanup()
-    }
-  })
-
-  it('regenerates compiled story markdown when prose changes', async () => {
-    const tmp = await createTempDir()
-
-    try {
-      const story = makeStory('story-output-sync')
-      await createStory(tmp.path, story)
-
-      const prose = makeFragment('pr-aaaaaa', {
-        type: 'prose',
-        name: 'Arrival',
-        content: 'She stepped off the train into cold air.',
-      })
-
-      await createFragment(tmp.path, story.id, prose)
-      await addProseSection(tmp.path, story.id, prose.id)
-
-      const compiledPath = getCompiledStoryPath(tmp.path, story.id)
-      const firstPass = await readFile(compiledPath, 'utf-8')
-      expect(firstPass).toContain('[[[pr-aaaaaa]]]')
-      expect(firstPass).toContain('She stepped off the train into cold air.')
-
-      await updateFragmentVersioned(
-        tmp.path,
-        story.id,
-        prose.id,
-        { content: 'She stepped off the train into bitter dawn air.' },
-        { reason: 'test-update' },
-      )
-
-      const secondPass = await readFile(compiledPath, 'utf-8')
-      expect(secondPass).toContain('She stepped off the train into bitter dawn air.')
-      expect(secondPass).not.toContain('She stepped off the train into cold air.')
-    } finally {
-      await tmp.cleanup()
-    }
-  })
-
+describe('md-files loading and parsing', () => {
   it('derives character ids from human-readable filenames and infers type from folder', async () => {
     const tmp = await createTempDir()
 
@@ -144,9 +24,6 @@ describe('md-files repository sync', () => {
       await createFragment(tmp.path, story.id, character)
 
       const characterDir = join(getMarkdownStoryRoot(tmp.path, story.id), 'Characters')
-      const files = await readdir(characterDir)
-      expect(files).toContain('Io Dren.md')
-
       const raw = await readFile(join(characterDir, 'Io Dren.md'), 'utf-8')
       expect(raw).not.toContain('\nid:')
       expect(raw).not.toContain('\nname:')
@@ -315,59 +192,6 @@ describe('md-files repository sync', () => {
     }
   })
 
-  it('infers archived state from the Archive subfolder', async () => {
-    const tmp = await createTempDir()
-
-    try {
-      const story = makeStory('story-archive-folder')
-      await createStory(tmp.path, story)
-
-      const archiveDir = join(getMarkdownStoryRoot(tmp.path, story.id), 'Characters', 'Archive')
-      await mkdir(archiveDir, { recursive: true })
-      await writeFile(
-        join(archiveDir, 'Mira Vale.md'),
-        'A former courier who now lives off maps and rumors.',
-        'utf-8',
-      )
-
-      expect(await listFragments(tmp.path, story.id, 'character')).toHaveLength(0)
-
-      const archived = await listArchivedFragments(tmp.path, story.id, 'character')
-      expect(archived).toHaveLength(1)
-      expect(archived[0]?.id).toBe('ch-mira-vale')
-      expect(archived[0]?.archived).toBe(true)
-    } finally {
-      await tmp.cleanup()
-    }
-  })
-
-  it('serializes concurrent fragment internal index writes', async () => {
-    const tmp = await createTempDir()
-
-    try {
-      const story = makeStory('story-concurrent-internals')
-      await createStory(tmp.path, story)
-
-      const fragments = Array.from({ length: 10 }, (_, index) => makeFragment(`pr-concurrent-${index}`, {
-        type: 'prose',
-        name: `Beat ${index}`,
-        description: `Description ${index}`,
-      }))
-
-      await Promise.all(fragments.map(fragment => upsertFragmentInternalRecord(tmp.path, story.id, fragment)))
-
-      const raw = await readFile(join(getInternalStoryRoot(tmp.path, story.id), 'fragment-internals.json'), 'utf-8')
-      const parsed = JSON.parse(raw) as Record<string, unknown>
-
-      expect(Object.keys(parsed)).toHaveLength(10)
-      for (const fragment of fragments) {
-        expect(parsed).toHaveProperty(fragment.id)
-      }
-    } finally {
-      await tmp.cleanup()
-    }
-  })
-
   it('discovers stories from lightweight _story.md files without full frontmatter', async () => {
     const tmp = await createTempDir()
 
@@ -391,41 +215,6 @@ describe('md-files repository sync', () => {
       expect(stories[0]?.id).toBe(storyId)
       expect(stories[0]?.name).toBe('Sam and Jake')
       expect(stories[0]?.description).toBe('Sam and Jake story')
-    } finally {
-      await tmp.cleanup()
-    }
-  })
-
-  it('numbers prose files by section order and keeps variations under the same number', async () => {
-    const tmp = await createTempDir()
-
-    try {
-      const story = makeStory('story-prose-order')
-      await createStory(tmp.path, story)
-
-      const first = makeFragment('pr-firstaa', { type: 'prose', name: 'First beat' })
-      const second = makeFragment('pr-seconda', { type: 'prose', name: 'Second beat' })
-      const variant = makeFragment('pr-variaaa', { type: 'prose', name: 'Second beat alt' })
-
-      await createFragment(tmp.path, story.id, first)
-      await addProseSection(tmp.path, story.id, first.id)
-
-      await createFragment(tmp.path, story.id, second)
-      await addProseSection(tmp.path, story.id, second.id)
-
-      await createFragment(tmp.path, story.id, variant)
-      await addProseVariation(tmp.path, story.id, 1, variant.id)
-
-      const proseDir = join(getMarkdownStoryRoot(tmp.path, story.id), 'Prose')
-      const files = (await readdir(proseDir)).sort()
-
-      expect(files).toContain('0000-pr-firstaa.md')
-      expect(files).toContain('0001-pr-seconda.md')
-      expect(files).toContain('0001-pr-variaaa.md')
-
-      const internalRaw = await readFile(join(getInternalStoryRoot(tmp.path, story.id), 'fragment-internals.json'), 'utf-8')
-      expect(internalRaw).toContain('"pr-firstaa"')
-      expect(internalRaw).toContain('"prose"')
     } finally {
       await tmp.cleanup()
     }
