@@ -3,11 +3,6 @@ import { serializeFrontmatter } from './frontmatter'
 
 const defaultStorySettings = StoryMetaSchema.shape.settings.parse({})
 
-interface StoryMetaFallbacks {
-  createdAt?: string
-  updatedAt?: string
-}
-
 export function serializeStoryMeta(story: StoryMeta): string {
   return serializeFrontmatter(
     {
@@ -26,7 +21,6 @@ export function serializeStoryMeta(story: StoryMeta): string {
 export function storyMetaFromMarkdown(
   attributes: Record<string, unknown>,
   body: string,
-  fallbacks: StoryMetaFallbacks = {},
 ): StoryMeta | null {
   const settingsResult = StoryMetaSchema.shape.settings.safeParse(attributes.settings ?? defaultStorySettings)
   if (!settingsResult.success) return null
@@ -37,8 +31,8 @@ export function storyMetaFromMarkdown(
     description: body,
     coverImage: attributes.coverImage ?? null,
     summary: attributes.summary ?? '',
-    createdAt: attributes.createdAt ?? fallbacks.createdAt ?? new Date(0).toISOString(),
-    updatedAt: attributes.updatedAt ?? fallbacks.updatedAt ?? new Date(0).toISOString(),
+    createdAt: attributes.createdAt ?? new Date(0).toISOString(),
+    updatedAt: attributes.updatedAt ?? new Date(0).toISOString(),
     settings: settingsResult.data,
   })
 

@@ -1,3 +1,4 @@
+import { zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import type { Fragment, StoryMeta } from '@/server/fragments/schema'
 import { createFragment, createStory, getStory, listFragments } from '@/server/fragments/storage'
@@ -86,6 +87,22 @@ describe('story archive', () => {
       expect(importedChain).toEqual({
         entries: [{ proseFragments: ['pr-opening'], active: 'pr-opening' }],
       })
+    } finally {
+      await tmp.cleanup()
+    }
+  })
+
+  it('rejects legacy archive imports', async () => {
+    const tmp = await createTempDir()
+
+    try {
+      const legacyArchive = zipSync({
+        'errata-story-export/meta.json': new TextEncoder().encode(JSON.stringify(makeStory('legacy-story'))),
+      })
+
+      await expect(importStoryFromZip(tmp.path, legacyArchive)).rejects.toThrow(
+        'Invalid archive: only current Errata story archives are supported',
+      )
     } finally {
       await tmp.cleanup()
     }

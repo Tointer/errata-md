@@ -91,6 +91,15 @@ export async function importStoryFromZip(
     || path.includes('/.errata/fragment-internals.json'),
   )
 
+  const importMode = branchesKey && hasBranchedContent
+    ? 'branched'
+    : hasMarkdownStoryTree
+      ? 'markdown'
+      : null
+  if (!importMode) {
+    throw new Error('Invalid archive: only current Errata story archives are supported')
+  }
+
   // Build new story meta
   const newMeta: StoryMeta = {
     ...originalMeta,
@@ -108,12 +117,10 @@ export async function importStoryFromZip(
   // Create story (sets up branches/main/ + branches.json)
   await createStory(dataDir, newMeta)
 
-  if (branchesKey && hasBranchedContent) {
+  if (importMode === 'branched') {
     await importNewFormat(dataDir, newStoryId, extracted, decoder, branchesKey)
-  } else if (hasMarkdownStoryTree) {
-    await importMarkdownStoryFormat(dataDir, newStoryId, extracted, paths)
   } else {
-    await importLegacyFormat(dataDir, newStoryId, extracted, paths, decoder)
+    await importMarkdownStoryFormat(dataDir, newStoryId, extracted, paths)
   }
 
   return newMeta
@@ -196,113 +203,14 @@ async function importNewFormat(
   }
 }
 
-// --- Legacy format import (root-level content) ---
-
-async function importLegacyFormat(
-  dataDir: string,
-  storyId: string,
-  extracted: Record<string, Uint8Array>,
-  paths: string[],
-  decoder: TextDecoder,
-): Promise<void> {
-  const storage = getStorageBackend()
-  // Collect fragment IDs and build remap
-  const idMap = new Map<string, string>()
-  const fragmentFiles: Array<{ data: Fragment }> = []
-
-  for (const [path, content] of Object.entries(extracted)) {
-    if (!path.includes('fragments/') || !path.endsWith('.json')) continue
-    if (path.includes('/branches/')) continue
-    const fragment = JSON.parse(decoder.decode(content)) as Fragment
-    const newId = generateFragmentId(fragment.type)
-    idMap.set(fragment.id, newId)
-    fragmentFiles.push({ data: fragment })
-  }
-
-  // Remap fragments
-  const remappedFragments: Fragment[] = fragmentFiles.map(({ data }) => {
-    const newId = idMap.get(data.id)!
-    return {
-      ...data,
-      id: newId,
-      refs: data.refs.map((ref) => idMap.get(ref) ?? ref),
-      meta: remapMeta(data.meta, idMap),
-    }
-  })
-
-  // Write fragments to the active branch (main)
-  const root = await getContentRoot(dataDir, storyId)
-  const internalRoot = getStoryInternalDir(dataDir, storyId)
-  const fragmentsDir = join(internalRoot, 'fragments')
-  await storage.ensureDir(fragmentsDir)
-  for (const fragment of remappedFragments) {
-    await storage.writeJson(
-      join(fragmentsDir, `${fragment.id}.json`),
-      fragment,
-    )
-  }
-
-  // Prose chain
-  const proseChainKey = paths.find((p) => p.endsWith('prose-chain.json') && !p.includes('fragments/') && !p.includes('branches/'))
-  if (proseChainKey) {
-    const proseChain = JSON.parse(decoder.decode(extracted[proseChainKey])) as ProseChain
-    const remappedProseChain: ProseChain = {
-      entries: proseChain.entries.map((entry) => ({
-        proseFragments: entry.proseFragments.map((id) => idMap.get(id) ?? id),
-        active: idMap.get(entry.active) ?? entry.active,
-      })),
-    }
-    await saveProseChain(dataDir, storyId, remappedProseChain)
-  }
-
-  // Associations
-  const assocKey = paths.find((p) => p.endsWith('associations.json') && !p.includes('fragments/') && !p.includes('branches/'))
-  if (assocKey) {
-    const assoc = JSON.parse(decoder.decode(extracted[assocKey])) as Associations
-    await saveAssociations(dataDir, storyId, remapAssociations(assoc, idMap))
-  }
-
-  // Generation logs (remap fragmentId)
-  const handledLegacy = new Set<string>()
-  for (const [path, content] of Object.entries(extracted)) {
-    if (!path.includes('generation-logs/') || !path.endsWith('.json')) continue
-    if (path.includes('/branches/')) continue
-    handledLegacy.add(path)
-    const logsDir = join(internalRoot, 'generation-logs')
-    await storage.ensureDir(logsDir)
-    const filename = path.split('/').pop()!
-    const logData = JSON.parse(decoder.decode(content))
-    if (logData.fragmentId && idMap.has(logData.fragmentId)) {
-      logData.fragmentId = idMap.get(logData.fragmentId)
-    }
-    await storage.writeJson(join(logsDir, filename), logData)
-  }
-
-  // Copy all remaining files verbatim (librarian, agent-blocks, block-config, etc.)
-  // Find the export root prefix (e.g. "errata-story-export/")
-  const rootPrefix = paths.find(p => p.endsWith('meta.json'))?.replace('meta.json', '') ?? ''
-  for (const [path, content] of Object.entries(extracted)) {
-    if (path.includes('/branches/')) continue
-    if (!path.startsWith(rootPrefix)) continue
-    const relativePath = path.slice(rootPrefix.length)
-    // Skip files already handled above
-    if (relativePath === 'meta.json' || relativePath === 'branches.json') continue
-    if (relativePath.startsWith('fragments/')) continue
-    if (relativePath === 'prose-chain.json' || relativePath === 'associations.json') continue
-    if (handledLegacy.has(path)) continue
-    const targetPath = join(root, normalizeLegacyStoryRelativePath(relativePath))
-    await storage.writeBytes(targetPath, content)
-  }
-}
-
 function readStoryMetaFromArchive(
   paths: string[],
   extracted: Record<string, Uint8Array>,
   decoder: TextDecoder,
 ): StoryMeta {
-  const metaKey = paths.find((p) => p.endsWith('meta.json') && !p.includes('fragments/') && !p.includes('branches/'))
-  if (metaKey) {
-    return JSON.parse(decoder.decode(extracted[metaKey])) as StoryMeta
+  const legacyMetaKey = paths.find((p) => p.endsWith('meta.json') && !p.includes('fragments/') && !p.includes('branches/'))
+  if (legacyMetaKey) {
+    throw new Error('Invalid archive: only current Errata story archives are supported')
   }
 
   const storyMetaKey = paths.find((p) => {
@@ -319,25 +227,6 @@ function readStoryMetaFromArchive(
     throw new Error('Invalid archive: could not parse story metadata')
   }
   return story
-}
-
-function normalizeLegacyStoryRelativePath(relativePath: string): string {
-  if (
-    relativePath === '_story.md'
-    || relativePath === 'block-config.json'
-    || relativePath === 'token-usage.json'
-    || relativePath.startsWith('agent-blocks/')
-    || relativePath.startsWith('character-chat/')
-    || relativePath.startsWith('Fragments/')
-    || relativePath.startsWith('Icons/')
-    || relativePath.startsWith('Images/')
-    || relativePath.startsWith('Markers/')
-    || relativePath.startsWith('librarian/')
-  ) {
-    return join('.errata', relativePath)
-  }
-
-  return relativePath
 }
 
 function getArchiveRootPrefix(paths: string[]): string {

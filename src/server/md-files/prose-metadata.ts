@@ -16,30 +16,10 @@ export interface ProseFragmentInternalFields {
   meta: Record<string, unknown>
 }
 
-function parseLegacyGeneratedFrom(attributes: Record<string, unknown>): string | undefined {
-  if (typeof attributes.generatedFrom === 'string') return attributes.generatedFrom
-  const meta = typeof attributes.meta === 'object' && attributes.meta !== null
-    ? attributes.meta as Record<string, unknown>
-    : null
-  return typeof meta?.generatedFrom === 'string' ? meta.generatedFrom : undefined
-}
-
-function parseLegacySummary(attributes: Record<string, unknown>): string | undefined {
-  if (typeof attributes.summary === 'string') return attributes.summary
-
-  const meta = typeof attributes.meta === 'object' && attributes.meta !== null
-    ? attributes.meta as Record<string, unknown>
-    : null
-  const librarian = typeof meta?._librarian === 'object' && meta._librarian !== null
-    ? meta._librarian as Record<string, unknown>
-    : null
-  return typeof librarian?.summary === 'string' ? librarian.summary : undefined
-}
-
 export function extractProseMarkdownMeta(attributes: Record<string, unknown>): ProseMarkdownMeta {
   return {
-    generatedFrom: parseLegacyGeneratedFrom(attributes),
-    summary: parseLegacySummary(attributes),
+    generatedFrom: typeof attributes.generatedFrom === 'string' ? attributes.generatedFrom : undefined,
+    summary: typeof attributes.summary === 'string' ? attributes.summary : undefined,
   }
 }
 

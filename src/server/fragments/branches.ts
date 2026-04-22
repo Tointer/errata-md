@@ -23,14 +23,6 @@ function createStaticBranchesIndex(): BranchesIndex {
   }
 }
 
-export async function migrateIfNeeded(_dir: string): Promise<void> {
-  // No-op: markdown-native stories use a single root content directory.
-}
-
-export function clearMigrationCache(): void {
-  // No-op compatibility hook.
-}
-
 export async function getBranchesIndex(_dataDir: string, _storyId: string): Promise<BranchesIndex> {
   return createStaticBranchesIndex()
 }

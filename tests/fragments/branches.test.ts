@@ -4,13 +4,11 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { createTempDir } from '../setup'
 import {
-  clearMigrationCache,
   createBranch,
   deleteBranch,
   getBranchesIndex,
   getContentRoot,
   getContentRootForBranch,
-  migrateIfNeeded,
   renameBranch,
   switchActiveBranch,
   withBranch,
@@ -53,14 +51,12 @@ function makeStory(id: string = TEST_STORY_ID): StoryMeta {
 }
 
 beforeEach(async () => {
-  clearMigrationCache()
   const temp = await createTempDir()
   dataDir = temp.path
   cleanup = temp.cleanup
 })
 
 afterEach(async () => {
-  clearMigrationCache()
   await cleanup()
 })
 
@@ -88,16 +84,6 @@ describe('branches compatibility', () => {
     const storyDir = join(dataDir, 'stories', TEST_STORY_ID)
     expect(existsSync(storyDir)).toBe(true)
     expect(existsSync(join(storyDir, '.errata', 'fragments'))).toBe(true)
-  })
-
-  it('keeps migration as a no-op compatibility hook', async () => {
-    const storyDir = join(dataDir, 'stories', TEST_STORY_ID)
-    await mkdir(storyDir, { recursive: true })
-    await writeFile(join(storyDir, 'legacy.txt'), 'legacy', 'utf-8')
-
-    await migrateIfNeeded(storyDir)
-
-    expect(existsSync(join(storyDir, 'legacy.txt'))).toBe(true)
   })
 
   it('executes withBranch without changing storage scope', async () => {
