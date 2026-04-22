@@ -1,10 +1,6 @@
-import { mkdir, readdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { existsSync } from 'node:fs'
 import type { Fragment, FragmentVersion, StoryMeta } from './schema'
 import { initBranches } from './branches'
 import { createLogger } from '../logging'
-import { getInternalStoryRoot } from '../md-files/paths'
 import {
   archiveFragmentMarkdown,
   isMarkdownFragmentArchived,
@@ -18,32 +14,20 @@ import {
   syncFragmentMarkdown,
   syncStoryMarkdownMeta,
 } from '../md-files'
+import {
+  getLegacyInternalFragmentFile,
+  getLegacyStoryMetaJsonFile,
+  getStoriesDir,
+  getStoryDir,
+} from '../storage/paths'
+import { getStorageBackend } from '../storage/runtime'
 
 const requestLogger = createLogger('fragment-storage')
 
-// --- Path helpers ---
-
-function storiesDir(dataDir: string) {
-  return join(dataDir, 'stories')
-}
-
-function storyDir(dataDir: string, storyId: string) {
-  return join(storiesDir(dataDir), storyId)
-}
-
-function storyMetaJsonPath(dataDir: string, storyId: string) {
-  return join(storyDir(dataDir, storyId), 'meta.json')
-}
-
-async function fragmentJsonPath(dataDir: string, storyId: string, fragmentId: string) {
-  const dir = join(getInternalStoryRoot(dataDir, storyId), 'fragments')
-  await mkdir(dir, { recursive: true })
-  return join(dir, `${fragmentId}.json`)
-}
-
 async function removeFileIfExists(path: string): Promise<void> {
-  if (existsSync(path)) {
-    await rm(path, { force: true })
+  const storage = getStorageBackend()
+  if (await storage.exists(path)) {
+    await storage.delete(path)
   }
 }
 
@@ -62,11 +46,12 @@ export async function createStory(
   dataDir: string,
   story: StoryMeta
 ): Promise<void> {
-  const dir = storyDir(dataDir, story.id)
-  await mkdir(dir, { recursive: true })
+  const storage = getStorageBackend()
+  const dir = getStoryDir(dataDir, story.id)
+  await storage.ensureDir(dir)
   await initBranches(dataDir, story.id)
   await syncStoryMarkdownMeta(dataDir, story)
-  await removeFileIfExists(storyMetaJsonPath(dataDir, story.id))
+  await removeFileIfExists(getLegacyStoryMetaJsonFile(dataDir, story.id))
 }
 
 export async function getStory(
@@ -77,17 +62,14 @@ export async function getStory(
 }
 
 export async function listStories(dataDir: string): Promise<StoryMeta[]> {
-  const dir = storiesDir(dataDir)
-  if (!existsSync(dir)) return []
-
-  const entries = await readdir(dir, { withFileTypes: true })
+  const storage = getStorageBackend()
+  const dir = getStoriesDir(dataDir)
+  const entries = await storage.listDir(dir)
   const stories: StoryMeta[] = []
 
   for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const meta = await getStory(dataDir, entry.name)
-      if (meta) stories.push(meta)
-    }
+    const meta = await getStory(dataDir, entry)
+    if (meta) stories.push(meta)
   }
 
   return stories
@@ -98,16 +80,17 @@ export async function updateStory(
   story: StoryMeta
 ): Promise<void> {
   await syncStoryMarkdownMeta(dataDir, story)
-  await removeFileIfExists(storyMetaJsonPath(dataDir, story.id))
+  await removeFileIfExists(getLegacyStoryMetaJsonFile(dataDir, story.id))
 }
 
 export async function deleteStory(
   dataDir: string,
   storyId: string
 ): Promise<void> {
-  const dir = storyDir(dataDir, storyId)
-  if (existsSync(dir)) {
-    await rm(dir, { recursive: true, force: true })
+  const storage = getStorageBackend()
+  const dir = getStoryDir(dataDir, storyId)
+  if (await storage.exists(dir)) {
+    await storage.delete(dir, { recursive: true })
   }
 }
 
@@ -121,7 +104,7 @@ export async function createFragment(
   const normalized = normalizeFragment(fragment)
   if (normalized) {
     await syncFragmentMarkdown(dataDir, storyId, normalized)
-    await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, normalized.id))
+    await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, normalized.id))
     if (normalized.type === 'prose' || normalized.type === 'marker') {
       await syncCompiledStoryFromCurrentChain(dataDir, storyId)
     }
@@ -190,7 +173,7 @@ export async function archiveFragment(
   if (!fragment) return null
   const moved = await archiveFragmentMarkdown(dataDir, storyId, fragmentId)
   if (!moved) return null
-  await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, fragmentId))
+  await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, fragmentId))
   if (fragment.type === 'prose' || fragment.type === 'marker') {
     await syncCompiledStoryFromCurrentChain(dataDir, storyId)
   }
@@ -206,7 +189,7 @@ export async function restoreFragment(
   if (!fragment) return null
   const moved = await restoreFragmentMarkdown(dataDir, storyId, fragmentId)
   if (!moved) return null
-  await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, fragmentId))
+  await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, fragmentId))
   if (fragment.type === 'prose' || fragment.type === 'marker') {
     await syncCompiledStoryFromCurrentChain(dataDir, storyId)
   }
@@ -222,7 +205,7 @@ export async function updateFragment(
   if (normalized) {
     requestLogger.info('Updating fragment markdown', { fragmentId: normalized.id, storyId })
     await syncFragmentMarkdown(dataDir, storyId, normalized)
-    await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, normalized.id))
+    await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, normalized.id))
     if (normalized.type === 'prose' || normalized.type === 'marker') {
       await syncCompiledStoryFromCurrentChain(dataDir, storyId)
     }
@@ -288,7 +271,7 @@ export async function deleteFragment(
   fragmentId: string
 ): Promise<void> {
   const existing = await getFragment(dataDir, storyId, fragmentId)
-  await removeFileIfExists(await fragmentJsonPath(dataDir, storyId, fragmentId))
+  await removeFileIfExists(getLegacyInternalFragmentFile(dataDir, storyId, fragmentId))
   await deleteFragmentMarkdown(dataDir, storyId, fragmentId)
   if (existing && (existing.type === 'prose' || existing.type === 'marker')) {
     await syncCompiledStoryFromCurrentChain(dataDir, storyId)

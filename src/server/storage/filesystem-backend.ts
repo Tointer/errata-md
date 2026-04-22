@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { StorageBackend, WriteOptions } from './backend'
+import type { DeleteOptions, StorageBackend, WriteOptions } from './backend'
 import { mkdirWithRetries, readFileWithRetries, rmWithRetries, writeFileWithRetries, writeJsonAtomic } from '../fs-utils'
 
 async function ensureParentDir(path: string, options?: WriteOptions): Promise<void> {
@@ -11,8 +11,8 @@ async function ensureParentDir(path: string, options?: WriteOptions): Promise<vo
 
 export function createFileSystemStorageBackend(): StorageBackend {
   return {
-    async delete(path: string): Promise<void> {
-      await rmWithRetries(path, { force: true })
+    async delete(path: string, options?: DeleteOptions): Promise<void> {
+      await rmWithRetries(path, { force: true, recursive: options?.recursive })
     },
 
     async exists(path: string): Promise<boolean> {

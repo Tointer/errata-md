@@ -2,8 +2,12 @@ export interface WriteOptions {
   ensureDir?: boolean
 }
 
+export interface DeleteOptions {
+  recursive?: boolean
+}
+
 export interface StorageBackend {
-  delete(path: string): Promise<void>
+  delete(path: string, options?: DeleteOptions): Promise<void>
   exists(path: string): Promise<boolean>
   ensureDir(path: string): Promise<void>
   listDir(path: string): Promise<string[]>

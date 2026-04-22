@@ -1,5 +1,13 @@
 import { join } from 'node:path'
-import { getInternalStoryPath } from '../md-files/paths'
+import { getInternalStoryPath, getInternalStoryRoot } from '../md-files/paths'
+
+export function getStoriesDir(dataDir: string): string {
+  return join(dataDir, 'stories')
+}
+
+export function getStoryDir(dataDir: string, storyId: string): string {
+  return join(getStoriesDir(dataDir), storyId)
+}
 
 export function resolveGlobalDataDir(dataDir: string): string {
   return process.env.GLOBAL_DATA_DIR?.trim() || dataDir
@@ -23,6 +31,18 @@ export function getStoryInternalDir(dataDir: string, storyId: string, ...segment
 
 export function getStoryInternalFile(dataDir: string, storyId: string, ...segments: string[]): string {
   return getInternalStoryPath(dataDir, storyId, ...segments)
+}
+
+export function getLegacyStoryMetaJsonFile(dataDir: string, storyId: string): string {
+  return join(getStoryDir(dataDir, storyId), 'meta.json')
+}
+
+export function getLegacyInternalFragmentsDir(dataDir: string, storyId: string): string {
+  return join(getInternalStoryRoot(dataDir, storyId), 'fragments')
+}
+
+export function getLegacyInternalFragmentFile(dataDir: string, storyId: string, fragmentId: string): string {
+  return join(getLegacyInternalFragmentsDir(dataDir, storyId), `${fragmentId}.json`)
 }
 
 export function getCharacterChatDir(dataDir: string, storyId: string): string {

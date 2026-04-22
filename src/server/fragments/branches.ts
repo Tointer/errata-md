@@ -1,9 +1,10 @@
-import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { BranchesIndex, BranchMeta } from './schema'
+import { getStorageBackend } from '../storage/runtime'
+import { getStoryDir } from '../storage/paths'
 
 function storyDir(dataDir: string, storyId: string): string {
-  return join(dataDir, 'stories', storyId)
+  return getStoryDir(dataDir, storyId)
 }
 
 function createMainBranch(): BranchMeta {
@@ -84,7 +85,8 @@ export async function renameBranch(_dataDir: string, _storyId: string, _branchId
 }
 
 export async function initBranches(dataDir: string, storyId: string): Promise<void> {
+  const storage = getStorageBackend()
   const dir = storyDir(dataDir, storyId)
-  await mkdir(dir, { recursive: true })
-  await mkdir(join(dir, '.errata', 'fragments'), { recursive: true })
+  await storage.ensureDir(dir)
+  await storage.ensureDir(join(dir, '.errata', 'fragments'))
 }
