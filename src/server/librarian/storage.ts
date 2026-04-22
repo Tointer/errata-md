@@ -6,7 +6,6 @@ import {
   getLibrarianChatHistoryFile,
   getLibrarianConversationHistoryFile,
   getLibrarianConversationsIndexFile,
-  getLibrarianDir,
   getLibrarianStateFile,
 } from '../storage/paths'
 import { getStorageBackend } from '../storage/runtime'
@@ -131,28 +130,6 @@ export interface LibrarianAnalysisIndex {
   appliedSummarySequence?: string[]
 }
 
-// --- Path helpers ---
-
-async function librarianDir(dataDir: string, storyId: string): Promise<string> {
-  return getLibrarianDir(dataDir, storyId)
-}
-
-async function analysesDir(dataDir: string, storyId: string): Promise<string> {
-  return getLibrarianAnalysesDir(dataDir, storyId)
-}
-
-async function analysisPath(dataDir: string, storyId: string, analysisId: string): Promise<string> {
-  return getLibrarianAnalysisFile(dataDir, storyId, analysisId)
-}
-
-async function statePath(dataDir: string, storyId: string): Promise<string> {
-  return getLibrarianStateFile(dataDir, storyId)
-}
-
-async function analysisIndexPath(dataDir: string, storyId: string): Promise<string> {
-  return getLibrarianAnalysisIndexFile(dataDir, storyId)
-}
-
 function shouldReplaceIndexEntry(
   previous: LibrarianAnalysisIndexEntry | undefined,
   incoming: { createdAt: string; analysisId: string },
@@ -177,9 +154,7 @@ async function saveAnalysisIndex(
   index: LibrarianAnalysisIndex,
 ): Promise<void> {
   const storage = getStorageBackend()
-  const dir = await librarianDir(dataDir, storyId)
-  await storage.ensureDir(dir)
-  await storage.writeJson(await analysisIndexPath(dataDir, storyId), index)
+  await storage.writeJson(getLibrarianAnalysisIndexFile(dataDir, storyId), index)
 }
 
 export async function getAnalysisIndex(
@@ -187,9 +162,8 @@ export async function getAnalysisIndex(
   storyId: string,
 ): Promise<LibrarianAnalysisIndex | null> {
   const storage = getStorageBackend()
-  const path = await analysisIndexPath(dataDir, storyId)
-  if (!(await storage.exists(path))) return null
-  const parsed = await storage.readJson<Partial<LibrarianAnalysisIndex>>(path)
+  const parsed = await storage.readJsonIfExists<Partial<LibrarianAnalysisIndex>>(getLibrarianAnalysisIndexFile(dataDir, storyId))
+  if (!parsed) return null
   return {
     version: 1,
     updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
@@ -252,9 +226,7 @@ export async function saveAnalysis(
   analysis: LibrarianAnalysis,
 ): Promise<void> {
   const storage = getStorageBackend()
-  const dir = await analysesDir(dataDir, storyId)
-  await storage.ensureDir(dir)
-  await storage.writeJson(await analysisPath(dataDir, storyId, analysis.id), analysis)
+  await storage.writeJson(getLibrarianAnalysisFile(dataDir, storyId, analysis.id), analysis)
 
   const currentIndex = await getAnalysisIndex(dataDir, storyId) ?? defaultAnalysisIndex()
   const previous = currentIndex.latestByFragmentId[analysis.fragmentId]
@@ -274,7 +246,7 @@ export async function getAnalysis(
   analysisId: string,
 ): Promise<LibrarianAnalysis | null> {
   const storage = getStorageBackend()
-  const path = await analysisPath(dataDir, storyId, analysisId)
+  const path = getLibrarianAnalysisFile(dataDir, storyId, analysisId)
   if (!(await storage.exists(path))) return null
   return normalizeAnalysis(await storage.readJson<Record<string, unknown>>(path))
 }
@@ -297,7 +269,7 @@ export async function deleteAnalysis(
   analysisId: string,
 ): Promise<boolean> {
   const storage = getStorageBackend()
-  const path = await analysisPath(dataDir, storyId, analysisId)
+  const path = getLibrarianAnalysisFile(dataDir, storyId, analysisId)
   if (!(await storage.exists(path))) return false
 
   // Read the analysis to get fragmentId for index cleanup
@@ -324,7 +296,7 @@ export async function listAnalyses(
   storyId: string,
 ): Promise<LibrarianAnalysisSummary[]> {
   const storage = getStorageBackend()
-  const dir = await analysesDir(dataDir, storyId)
+  const dir = getLibrarianAnalysesDir(dataDir, storyId)
   if (!(await storage.exists(dir))) return []
 
   const entries = await storage.listDir(dir)
@@ -332,7 +304,9 @@ export async function listAnalyses(
 
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue
-    const analysis = normalizeAnalysis(await storage.readJson<Record<string, unknown>>(await analysisPath(dataDir, storyId, entry.replace(/\.json$/, ''))))
+    const analysis = normalizeAnalysis(await storage.readJson<Record<string, unknown>>(
+      getLibrarianAnalysisFile(dataDir, storyId, entry.replace(/\.json$/, '')),
+    ))
     summaries.push({
       id: analysis.id,
       createdAt: analysis.createdAt,
@@ -356,16 +330,12 @@ export async function getState(
   storyId: string,
 ): Promise<LibrarianState> {
   const storage = getStorageBackend()
-  const path = await statePath(dataDir, storyId)
-  if (!(await storage.exists(path))) {
-    return {
-      lastAnalyzedFragmentId: null,
-      summarizedUpTo: null,
-      recentMentions: {},
-      timeline: [],
-    }
-  }
-  return storage.readJson(path)
+  return storage.readJsonOrDefault(getLibrarianStateFile(dataDir, storyId), {
+    lastAnalyzedFragmentId: null,
+    summarizedUpTo: null,
+    recentMentions: {},
+    timeline: [],
+  })
 }
 
 export async function saveState(
@@ -374,9 +344,7 @@ export async function saveState(
   state: LibrarianState,
 ): Promise<void> {
   const storage = getStorageBackend()
-  const dir = await librarianDir(dataDir, storyId)
-  await storage.ensureDir(dir)
-  await storage.writeJson(await statePath(dataDir, storyId), state)
+  await storage.writeJson(getLibrarianStateFile(dataDir, storyId), state)
 }
 
 // --- Chat history ---
@@ -392,20 +360,15 @@ export interface ChatHistory {
   updatedAt: string
 }
 
-async function chatHistoryPath(dataDir: string, storyId: string): Promise<string> {
-  return getLibrarianChatHistoryFile(dataDir, storyId)
-}
-
 export async function getChatHistory(
   dataDir: string,
   storyId: string,
 ): Promise<ChatHistory> {
   const storage = getStorageBackend()
-  const path = await chatHistoryPath(dataDir, storyId)
-  if (!(await storage.exists(path))) {
-    return { messages: [], updatedAt: new Date().toISOString() }
-  }
-  return storage.readJson(path)
+  return storage.readJsonOrDefault(getLibrarianChatHistoryFile(dataDir, storyId), {
+    messages: [],
+    updatedAt: new Date().toISOString(),
+  })
 }
 
 export async function saveChatHistory(
@@ -414,13 +377,11 @@ export async function saveChatHistory(
   messages: ChatHistoryMessage[],
 ): Promise<void> {
   const storage = getStorageBackend()
-  const dir = await librarianDir(dataDir, storyId)
-  await storage.ensureDir(dir)
   const history: ChatHistory = {
     messages,
     updatedAt: new Date().toISOString(),
   }
-  await storage.writeJson(await chatHistoryPath(dataDir, storyId), history)
+  await storage.writeJson(getLibrarianChatHistoryFile(dataDir, storyId), history)
 }
 
 export async function clearChatHistory(
@@ -428,10 +389,7 @@ export async function clearChatHistory(
   storyId: string,
 ): Promise<void> {
   const storage = getStorageBackend()
-  const path = await chatHistoryPath(dataDir, storyId)
-  if (await storage.exists(path)) {
-    await storage.delete(path)
-  }
+  await storage.deleteIfExists(getLibrarianChatHistoryFile(dataDir, storyId))
 }
 
 // --- Conversations ---
@@ -447,27 +405,22 @@ interface ConversationsIndex {
   conversations: ConversationMeta[]
 }
 
-async function conversationsIndexPath(dataDir: string, storyId: string): Promise<string> {
-  return getLibrarianConversationsIndexFile(dataDir, storyId)
-}
-
 function conversationHistoryPath(dataDir: string, storyId: string, conversationId: string): string {
   return getLibrarianConversationHistoryFile(dataDir, storyId, conversationId)
 }
 
 async function readConversationsIndex(dataDir: string, storyId: string): Promise<ConversationsIndex> {
   const storage = getStorageBackend()
-  const path = await conversationsIndexPath(dataDir, storyId)
-  if (!(await storage.exists(path))) return { conversations: [] }
-  const parsed = await storage.readJson<Partial<ConversationsIndex>>(path)
+  const parsed = await storage.readJsonOrDefault<Partial<ConversationsIndex>>(
+    getLibrarianConversationsIndexFile(dataDir, storyId),
+    { conversations: [] },
+  )
   return { conversations: parsed.conversations ?? [] }
 }
 
 async function writeConversationsIndex(dataDir: string, storyId: string, index: ConversationsIndex): Promise<void> {
   const storage = getStorageBackend()
-  const dir = await librarianDir(dataDir, storyId)
-  await storage.ensureDir(dir)
-  await storage.writeJson(await conversationsIndexPath(dataDir, storyId), index)
+  await storage.writeJson(getLibrarianConversationsIndexFile(dataDir, storyId), index)
 }
 
 export async function listConversations(dataDir: string, storyId: string): Promise<ConversationMeta[]> {
@@ -514,7 +467,7 @@ export async function deleteConversation(dataDir: string, storyId: string, conve
   await writeConversationsIndex(dataDir, storyId, index)
   // Delete history file
   const historyFile = conversationHistoryPath(dataDir, storyId, conversationId)
-  if (await storage.exists(historyFile)) await storage.delete(historyFile)
+  await storage.deleteIfExists(historyFile)
   return true
 }
 
@@ -524,9 +477,10 @@ export async function getConversationHistory(
   conversationId: string,
 ): Promise<ChatHistory> {
   const storage = getStorageBackend()
-  const path = conversationHistoryPath(dataDir, storyId, conversationId)
-  if (!(await storage.exists(path))) return { messages: [], updatedAt: new Date().toISOString() }
-  return storage.readJson(path)
+  return storage.readJsonOrDefault(conversationHistoryPath(dataDir, storyId, conversationId), {
+    messages: [],
+    updatedAt: new Date().toISOString(),
+  })
 }
 
 export async function saveConversationHistory(
@@ -536,8 +490,6 @@ export async function saveConversationHistory(
   messages: ChatHistoryMessage[],
 ): Promise<void> {
   const storage = getStorageBackend()
-  const dir = await librarianDir(dataDir, storyId)
-  await storage.ensureDir(dir)
   const history: ChatHistory = { messages, updatedAt: new Date().toISOString() }
   await storage.writeJson(conversationHistoryPath(dataDir, storyId, conversationId), history)
   // Update conversation timestamp

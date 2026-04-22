@@ -6,20 +6,15 @@ import { getStorageBackend } from '../storage/runtime'
 
 const log = createLogger('tags')
 
-async function associationsPath(dataDir: string, storyId: string): Promise<string> {
-  return getAssociationsFile(dataDir, storyId)
-}
-
 export async function getAssociations(
   dataDir: string,
   storyId: string
 ): Promise<Associations> {
   const storage = getStorageBackend()
-  const path = await associationsPath(dataDir, storyId)
-  const assoc = await storage.readJsonIfExists<Associations>(path)
-  if (!assoc) {
-    return { tagIndex: {}, refIndex: {} }
-  }
+  const assoc = await storage.readJsonOrDefault<Associations>(
+    getAssociationsFile(dataDir, storyId),
+    { tagIndex: {}, refIndex: {} },
+  )
   return AssociationsSchema.parse(assoc)
 }
 
@@ -29,8 +24,7 @@ export async function saveAssociations(
   assoc: Associations
 ): Promise<void> {
   const storage = getStorageBackend()
-  const path = await associationsPath(dataDir, storyId)
-  await storage.writeJson(path, assoc)
+  await storage.writeJson(getAssociationsFile(dataDir, storyId), assoc)
 }
 
 // --- Tag operations ---

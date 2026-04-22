@@ -10,19 +10,16 @@ export const AgentBlockConfigSchema = BlockConfigSchema.extend({
 
 export type AgentBlockConfig = z.infer<typeof AgentBlockConfigSchema>
 
-async function agentBlockConfigPath(dataDir: string, storyId: string, agentName: string): Promise<string> {
-  return getStoryInternalDir(dataDir, storyId, 'agent-blocks', `${agentName}.json`)
-}
-
 function emptyConfig(): AgentBlockConfig {
   return { customBlocks: [], overrides: {}, blockOrder: [], disabledTools: [], disableAutoAnalysis: false }
 }
 
 export async function getAgentBlockConfig(dataDir: string, storyId: string, agentName: string): Promise<AgentBlockConfig> {
   const storage = getStorageBackend()
-  const path = await agentBlockConfigPath(dataDir, storyId, agentName)
-  const config = await storage.readJsonIfExists(path)
-  if (!config) return emptyConfig()
+  const config = await storage.readJsonOrDefault(
+    getStoryInternalDir(dataDir, storyId, 'agent-blocks', `${agentName}.json`),
+    emptyConfig(),
+  )
 
   try {
     return AgentBlockConfigSchema.parse(config)
@@ -33,8 +30,7 @@ export async function getAgentBlockConfig(dataDir: string, storyId: string, agen
 
 export async function saveAgentBlockConfig(dataDir: string, storyId: string, agentName: string, config: AgentBlockConfig): Promise<void> {
   const storage = getStorageBackend()
-  const path = await agentBlockConfigPath(dataDir, storyId, agentName)
-  await storage.writeJson(path, config)
+  await storage.writeJson(getStoryInternalDir(dataDir, storyId, 'agent-blocks', `${agentName}.json`), config)
 }
 
 export async function addAgentCustomBlock(

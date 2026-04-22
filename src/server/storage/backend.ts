@@ -14,6 +14,7 @@ export interface DirectoryEntry extends FileMetadata {
 
 export interface StorageBackend {
   delete(path: string, options?: DeleteOptions): Promise<void>
+  deleteIfExists(path: string, options?: DeleteOptions): Promise<void>
   exists(path: string): Promise<boolean>
   ensureDir(path: string): Promise<void>
   listDir(path: string): Promise<string[]>
@@ -22,6 +23,7 @@ export interface StorageBackend {
   move(fromPath: string, toPath: string): Promise<void>
   readBytes(path: string): Promise<Uint8Array>
   readJson<T>(path: string): Promise<T>
+  readJsonOrDefault<T>(path: string, fallback: T): Promise<T>
   readJsonIfExists<T>(path: string): Promise<T | null>
   readText(path: string): Promise<string>
   readTextIfExists(path: string): Promise<string | null>

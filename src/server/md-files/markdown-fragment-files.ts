@@ -23,7 +23,7 @@ export async function writeMarkdownFragmentFile(
     }
   }
 
-  await storage.writeText(nextPath, content, { ensureDir: true })
+  await storage.writeText(nextPath, content)
 }
 
 export async function deleteMarkdownFragmentFiles(

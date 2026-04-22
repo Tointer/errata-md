@@ -127,6 +127,11 @@ export function createFileSystemStorageBackend(): StorageBackend {
       await rmWithRetries(path, options?.recursive ? { force: true, recursive: true } : { force: true })
     },
 
+    async deleteIfExists(path: string, options?: DeleteOptions): Promise<void> {
+      if (!existsSync(path)) return
+      await rmWithRetries(path, options?.recursive ? { force: true, recursive: true } : { force: true })
+    },
+
     async exists(path: string): Promise<boolean> {
       return existsSync(path)
     },
@@ -158,6 +163,11 @@ export function createFileSystemStorageBackend(): StorageBackend {
     },
 
     async readJson<T>(path: string): Promise<T> {
+      return JSON.parse(await readFileWithRetries(path, 'utf-8')) as T
+    },
+
+    async readJsonOrDefault<T>(path: string, fallback: T): Promise<T> {
+      if (!existsSync(path)) return fallback
       return JSON.parse(await readFileWithRetries(path, 'utf-8')) as T
     },
 

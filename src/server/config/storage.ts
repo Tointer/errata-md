@@ -13,8 +13,9 @@ function configPath(dataDir: string): string {
 export async function getGlobalConfig(dataDir: string): Promise<GlobalConfig> {
   const storage = getStorageBackend()
   try {
-    const raw = await storage.readText(configPath(dataDir))
-    return GlobalConfigSchema.parse(JSON.parse(raw))
+    return GlobalConfigSchema.parse(
+      await storage.readJsonOrDefault(configPath(dataDir), { providers: [], defaultProviderId: null }),
+    )
   } catch {
     return { providers: [], defaultProviderId: null }
   }
