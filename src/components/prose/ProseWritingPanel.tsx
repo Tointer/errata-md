@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState, useCallback, memo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { api, type Fragment } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { FloatingElement } from '@/components/tiptap/FloatingElement'
+import { DesktopFindBar } from '@/components/desktop/DesktopFindBar'
 import {
   Loader2,
   Sparkles,
@@ -33,9 +36,95 @@ interface ProseWritingPanelProps {
   storyId: string
   fragmentId: string
   initialSelection?: string | null
+  findOpen: boolean
+  findQuery: string
+  findFocusToken?: number
+  onFindOpenChange: (open: boolean) => void
+  onFindQueryChange: (query: string) => void
   onClose: () => void
   onFragmentChange: (id: string) => void
 }
+
+const proseEditorFindPluginKey = new PluginKey<{
+  query: string
+  matches: Array<{ from: number; to: number }>
+  activeIndex: number
+}>('prose-editor-find')
+
+function buildEditorFindMatches(doc: any, query: string): Array<{ from: number; to: number }> {
+  if (!query) return []
+
+  const matcher = query.toLocaleLowerCase()
+  const matches: Array<{ from: number; to: number }> = []
+
+  doc.descendants((node: any, pos: number) => {
+    if (!node.isText || !node.text) return true
+
+    const text = String(node.text)
+    const lower = text.toLocaleLowerCase()
+    let index = lower.indexOf(matcher)
+
+    while (index !== -1) {
+      matches.push({ from: pos + index, to: pos + index + query.length })
+      index = lower.indexOf(matcher, index + query.length)
+    }
+
+    return true
+  })
+
+  return matches
+}
+
+const ProseEditorFindExtension = StarterKit.extend({
+  name: 'proseEditorFindHost',
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: proseEditorFindPluginKey,
+        state: {
+          init: (_, state) => ({
+            query: '',
+            matches: buildEditorFindMatches(state.doc, ''),
+            activeIndex: 0,
+          }),
+          apply: (tr, pluginState, _oldState, newState) => {
+            const meta = tr.getMeta(proseEditorFindPluginKey) as Partial<typeof pluginState> | undefined
+            const nextQuery = typeof meta?.query === 'string' ? meta.query : pluginState.query
+            const nextActiveIndex = typeof meta?.activeIndex === 'number' ? meta.activeIndex : pluginState.activeIndex
+            const queryChanged = meta?.query !== undefined
+            const matches = (tr.docChanged || queryChanged)
+              ? buildEditorFindMatches(newState.doc, nextQuery)
+              : pluginState.matches
+
+            return {
+              query: nextQuery,
+              matches,
+              activeIndex: matches.length === 0 ? 0 : Math.min(nextActiveIndex, matches.length - 1),
+            }
+          },
+        },
+        props: {
+          decorations(state) {
+            const pluginState = proseEditorFindPluginKey.getState(state)
+            if (!pluginState || pluginState.matches.length === 0) return null
+
+            const decorations = pluginState.matches.map((match, index) => Decoration.inline(match.from, match.to, {
+              style: [
+                'background-color: ' + (index === pluginState.activeIndex ? 'rgba(245, 158, 11, 0.85)' : 'rgba(250, 204, 21, 0.45)'),
+                'color: inherit',
+                'border-radius: 0.2rem',
+                'padding: 0 0.08em',
+              ].join('; '),
+            }))
+
+            return DecorationSet.create(state.doc, decorations)
+          },
+        },
+      }),
+    ]
+  },
+})
 
 /** Build ProseMirror JSON directly — avoids DOM parsing overhead of HTML path */
 function plainTextToDoc(content: string): Record<string, unknown> {
@@ -170,6 +259,11 @@ export function ProseWritingPanel({
   storyId,
   fragmentId,
   initialSelection,
+  findOpen,
+  findQuery,
+  findFocusToken,
+  onFindOpenChange,
+  onFindQueryChange,
   onClose,
   onFragmentChange,
 }: ProseWritingPanelProps) {
@@ -186,6 +280,9 @@ export function ProseWritingPanel({
   const savingFragmentRef = useRef<string | null>(null)
   const [sidebarSearch, setSidebarSearch] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [activeFindMatch, setActiveFindMatch] = useState(0)
+  const [findMatchCount, setFindMatchCount] = useState(0)
+  const [debouncedFindQuery, setDebouncedFindQuery] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const transformUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -282,7 +379,7 @@ export function ProseWritingPanel({
   // Tiptap editor
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
+      ProseEditorFindExtension.configure({
         heading: false,
         bulletList: false,
         orderedList: false,
@@ -369,6 +466,82 @@ export function ProseWritingPanel({
     }
   }, [editor, initialSelection])
 
+  const closeFind = useCallback(() => {
+    onFindOpenChange(false)
+    onFindQueryChange('')
+    setActiveFindMatch(0)
+    setFindMatchCount(0)
+  }, [onFindOpenChange, onFindQueryChange])
+
+  const moveFindSelection = useCallback((direction: 1 | -1) => {
+    if (!editor || findMatchCount === 0) return
+
+    setActiveFindMatch((current) => {
+      const next = (current + direction + findMatchCount) % findMatchCount
+      editor.commands.focus()
+      editor.view.dispatch(editor.state.tr.setMeta(proseEditorFindPluginKey, { activeIndex: next }))
+      return next
+    })
+  }, [editor, findMatchCount])
+
+  useEffect(() => {
+    const trimmed = findQuery.trim()
+    const timeout = window.setTimeout(() => {
+      setDebouncedFindQuery(trimmed)
+      setActiveFindMatch(0)
+    }, 180)
+
+    return () => window.clearTimeout(timeout)
+  }, [findQuery])
+
+  useEffect(() => {
+    if (!editor) return
+
+    const query = findOpen ? debouncedFindQuery : ''
+    editor.view.dispatch(editor.state.tr.setMeta(proseEditorFindPluginKey, {
+      query,
+      activeIndex: 0,
+    }))
+
+    const pluginState = proseEditorFindPluginKey.getState(editor.state)
+    const count = pluginState?.matches.length ?? 0
+    setFindMatchCount(count)
+    if (count === 0) return
+
+    const first = pluginState?.matches[0]
+    if (first) {
+      editor.commands.setTextSelection(first)
+      editor.commands.scrollIntoView()
+    }
+  }, [debouncedFindQuery, editor, findOpen, fragmentId])
+
+  useEffect(() => {
+    if (!editor) return
+
+    const updateFindState = () => {
+      const pluginState = proseEditorFindPluginKey.getState(editor.state)
+      const count = pluginState?.matches.length ?? 0
+      setFindMatchCount(count)
+      setActiveFindMatch(pluginState?.activeIndex ?? 0)
+    }
+
+    updateFindState()
+    editor.on('transaction', updateFindState)
+    return () => {
+      editor.off('transaction', updateFindState)
+    }
+  }, [editor])
+
+  useEffect(() => {
+    if (!editor || !findOpen || findMatchCount === 0) return
+
+    const pluginState = proseEditorFindPluginKey.getState(editor.state)
+    const match = pluginState?.matches[Math.min(activeFindMatch, findMatchCount - 1)]
+    if (!match) return
+    editor.commands.setTextSelection(match)
+    editor.commands.scrollIntoView()
+  }, [activeFindMatch, editor, findMatchCount, findOpen])
+
   // Track selection reactively
   const [hasSelection, setHasSelection] = useState(false)
   useEffect(() => {
@@ -432,6 +605,18 @@ export function ProseWritingPanel({
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (findOpen) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          closeFind()
+          return
+        }
+        if (e.key === 'F3') {
+          e.preventDefault()
+          moveFindSelection(e.shiftKey ? -1 : 1)
+          return
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
@@ -459,7 +644,7 @@ export function ProseWritingPanel({
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [handleSave, isTransformingSelection, onClose, editor, currentFragment, fragmentId, getEditorText, updateMutation, navigatePrev, navigateNext])
+  }, [closeFind, currentFragment, editor, findOpen, fragmentId, getEditorText, handleSave, isTransformingSelection, moveFindSelection, navigateNext, navigatePrev, onClose, updateMutation])
 
   // Scroll active sidebar item into view
   useEffect(() => {
@@ -588,6 +773,21 @@ export function ProseWritingPanel({
 
   return (
     <div className="flex h-full" data-component-id="prose-writing-panel">
+      <DesktopFindBar
+        open={findOpen}
+        query={findQuery}
+        focusToken={findFocusToken}
+        matchCount={findMatchCount}
+        activeMatchIndex={activeFindMatch}
+        onQueryChange={(value) => {
+          if (value === findQuery) return
+          onFindQueryChange(value)
+          setActiveFindMatch(0)
+        }}
+        onNext={() => moveFindSelection(1)}
+        onPrevious={() => moveFindSelection(-1)}
+        onClose={closeFind}
+      />
       {/* Editor area */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}

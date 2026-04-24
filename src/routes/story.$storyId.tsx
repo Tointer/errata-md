@@ -82,6 +82,9 @@ function StoryEditorPage() {
   const [pluginCloseReturnSection, setPluginCloseReturnSection] = useState<SidebarSection>(null)
   const [editingProseId, setEditingProseId] = useState<string | null>(null)
   const [editSelectionText, setEditSelectionText] = useState<string | null>(null)
+  const [desktopFindOpen, setDesktopFindOpen] = useState(false)
+  const [desktopFindQuery, setDesktopFindQuery] = useState('')
+  const [desktopFindFocusToken, setDesktopFindFocusToken] = useState(0)
   const [askLibrarianFragmentId, setAskLibrarianFragmentId] = useState<string | null>(null)
   const [askLibrarianPrefill, setAskLibrarianPrefill] = useState<string | null>(null)
   const [fileDragOver, setFileDragOver] = useState(false)
@@ -210,6 +213,22 @@ function StoryEditorPage() {
       deactivateAllClientPluginRuntimes()
     }
   }, [])
+
+  useEffect(() => {
+    const handleDesktopFindShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
+      if (mainView !== 'prose') return
+
+      event.preventDefault()
+      const selection = window.getSelection()?.toString().trim() ?? ''
+      setDesktopFindOpen(true)
+      setDesktopFindQuery((current) => current || (selection.includes('\n') ? '' : selection))
+      setDesktopFindFocusToken((current) => current + 1)
+    }
+
+    window.addEventListener('keydown', handleDesktopFindShortcut)
+    return () => window.removeEventListener('keydown', handleDesktopFindShortcut)
+  }, [mainView])
 
   // Generic plugin query invalidation — plugins dispatch this event to
   // invalidate TanStack Query caches without needing React context.
@@ -663,6 +682,12 @@ function StoryEditorPage() {
             storyId={storyId}
             coverImage={story.coverImage}
             outlineOpen={outlineOpen}
+            findOpen={desktopFindOpen}
+            findQuery={desktopFindQuery}
+            findFocusToken={desktopFindFocusToken}
+            searchActive={!editingProseId}
+            onFindOpenChange={setDesktopFindOpen}
+            onFindQueryChange={setDesktopFindQuery}
             onSelectFragment={handleSelectFragment}
             onEditProse={(fragmentId, selectedText) => {
               setEditingProseId(fragmentId)
@@ -733,6 +758,11 @@ function StoryEditorPage() {
               storyId={storyId}
               fragmentId={editingProseId}
               initialSelection={editSelectionText}
+              findOpen={desktopFindOpen}
+              findQuery={desktopFindQuery}
+              findFocusToken={desktopFindFocusToken}
+              onFindOpenChange={setDesktopFindOpen}
+              onFindQueryChange={setDesktopFindQuery}
               onClose={() => { setEditingProseId(null); setEditSelectionText(null) }}
               onFragmentChange={setEditingProseId}
             />

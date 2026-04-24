@@ -13,11 +13,19 @@ import { InlineGenerationInput, type ThoughtStep } from './InlineGenerationInput
 import { GenerationThoughts } from './GenerationThoughts'
 import { ProseOutlinePanel } from './ProseOutlinePanel'
 import { CharacterMentionProvider } from './CharacterMentionContext'
+import { DesktopFindBar } from '@/components/desktop/DesktopFindBar'
+import { isDesktopApp } from '@/lib/desktop'
 
 interface ProseChainViewProps {
   storyId: string
   coverImage?: string | null
   outlineOpen?: boolean
+  findOpen: boolean
+  findQuery: string
+  findFocusToken?: number
+  searchActive: boolean
+  onFindOpenChange: (open: boolean) => void
+  onFindQueryChange: (query: string) => void
   onSelectFragment: (fragment: Fragment) => void
   onEditProse?: (fragmentId: string, selectedText?: string) => void
   onDebugLog?: (logId: string) => void
@@ -184,6 +192,12 @@ export function ProseChainView({
   storyId,
   coverImage,
   outlineOpen,
+  findOpen,
+  findQuery,
+  findFocusToken,
+  searchActive,
+  onFindOpenChange,
+  onFindQueryChange,
   onSelectFragment,
   onEditProse,
   onDebugLog,
@@ -192,11 +206,40 @@ export function ProseChainView({
 }: ProseChainViewProps) {
 
   const [activeIndex, setActiveIndex] = useState(0)
+  const [activeFindMatch, setActiveFindMatch] = useState(0)
+  const [findMatchCount, setFindMatchCount] = useState(0)
+  const [debouncedFindQuery, setDebouncedFindQuery] = useState('')
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const [quickSwitch] = useQuickSwitch()
   const [proseWidth] = useProseWidth()
   const [mentionsEnabled] = useCharacterMentions()
   const queryClient = useQueryClient()
+  const findMatchesRef = useRef<HTMLElement[]>([])
+
+  const clearFindHighlights = useCallback(() => {
+    const root = scrollAreaRef.current
+    if (!root) return
+    const highlights = root.querySelectorAll<HTMLElement>('[data-find-highlight="prose"]')
+    highlights.forEach((highlight) => {
+      const parent = highlight.parentNode
+      if (!parent) return
+      parent.replaceChild(document.createTextNode(highlight.textContent ?? ''), highlight)
+      parent.normalize()
+    })
+    findMatchesRef.current = []
+  }, [])
+
+  const updateActiveFindHighlight = useCallback((matchIndex: number) => {
+    const matches = findMatchesRef.current
+    matches.forEach((match, index) => {
+      const isActive = index === matchIndex
+      match.dataset.findActive = isActive ? 'true' : 'false'
+      match.style.backgroundColor = isActive ? 'rgba(245, 158, 11, 0.85)' : 'rgba(250, 204, 21, 0.45)'
+      match.style.color = 'inherit'
+    })
+  }, [])
+
+  useEffect(() => clearFindHighlights, [clearFindHighlights])
 
   // Co-locate both queries so they settle in the same component — prevents
   // desync after regeneration where the chain points to a fragment the stale
@@ -387,7 +430,7 @@ export function ProseChainView({
   }, [coverImage, getViewport])
 
   // Whether to use virtualization (skip for short lists)
-  const useVirtual = orderedItems.length > 10
+  const useVirtual = orderedItems.length > 10 && !(searchActive && findOpen && debouncedFindQuery.length > 0)
 
   const virtualizer = useVirtualizer({
     count: orderedItems.length,
@@ -525,8 +568,150 @@ export function ProseChainView({
     })
   }, [storyId, onSelectFragment])
 
+  const moveFindSelection = useCallback((direction: 1 | -1) => {
+    const matches = findMatchesRef.current
+    if (matches.length === 0) return
+    setActiveFindMatch((current) => {
+      const next = (current + direction + matches.length) % matches.length
+      return next
+    })
+  }, [])
+
+  const closeFind = useCallback(() => {
+    onFindOpenChange(false)
+    onFindQueryChange('')
+    setActiveFindMatch(0)
+    setFindMatchCount(0)
+    clearFindHighlights()
+  }, [clearFindHighlights, onFindOpenChange, onFindQueryChange])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isDesktopApp() || !searchActive || !findOpen) return
+
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeFind()
+      } else if (event.key === 'F3') {
+        event.preventDefault()
+        moveFindSelection(event.shiftKey ? -1 : 1)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [closeFind, findOpen, moveFindSelection, searchActive])
+
+  useEffect(() => {
+    const trimmed = findQuery.trim()
+    const timeout = window.setTimeout(() => {
+      setDebouncedFindQuery(trimmed)
+      setActiveFindMatch(0)
+    }, 180)
+
+    return () => window.clearTimeout(timeout)
+  }, [findQuery])
+
+  useEffect(() => {
+    clearFindHighlights()
+
+    const query = debouncedFindQuery
+    if (!searchActive || !findOpen || !query) {
+      setFindMatchCount(0)
+      return
+    }
+
+    const root = scrollAreaRef.current
+    if (!root) return
+
+    const matcher = query.toLocaleLowerCase()
+    const matchLength = query.length
+    const contentRoots = root.querySelectorAll<HTMLElement>('[data-component-id$="-select"] .stream-markdown')
+    const matches: HTMLElement[] = []
+
+    contentRoots.forEach((contentRoot) => {
+      const walker = document.createTreeWalker(contentRoot, NodeFilter.SHOW_TEXT)
+      const textNodes: Text[] = []
+
+      while (walker.nextNode()) {
+        const node = walker.currentNode as Text
+        if (!node.nodeValue?.trim()) continue
+        textNodes.push(node)
+      }
+
+      textNodes.forEach((node) => {
+        const text = node.nodeValue ?? ''
+        const lowerText = text.toLocaleLowerCase()
+        if (!lowerText.includes(matcher)) return
+
+        const fragment = document.createDocumentFragment()
+        let searchFrom = 0
+        let matchIndex = lowerText.indexOf(matcher, searchFrom)
+
+        while (matchIndex !== -1) {
+          if (matchIndex > searchFrom) {
+            fragment.appendChild(document.createTextNode(text.slice(searchFrom, matchIndex)))
+          }
+
+          const highlight = document.createElement('mark')
+          highlight.dataset.findHighlight = 'prose'
+          highlight.style.backgroundColor = 'rgba(250, 204, 21, 0.45)'
+          highlight.style.color = 'inherit'
+          highlight.style.borderRadius = '0.2rem'
+          highlight.style.padding = '0 0.08em'
+          highlight.textContent = text.slice(matchIndex, matchIndex + matchLength)
+          fragment.appendChild(highlight)
+          matches.push(highlight)
+
+          searchFrom = matchIndex + matchLength
+          matchIndex = lowerText.indexOf(matcher, searchFrom)
+        }
+
+        if (searchFrom < text.length) {
+          fragment.appendChild(document.createTextNode(text.slice(searchFrom)))
+        }
+
+        node.parentNode?.replaceChild(fragment, node)
+      })
+    })
+
+    findMatchesRef.current = matches
+    setFindMatchCount(matches.length)
+
+    if (matches.length === 0) {
+      setActiveFindMatch(0)
+      return
+    }
+
+    setActiveFindMatch((current) => Math.min(current, matches.length - 1))
+  }, [clearFindHighlights, debouncedFindQuery, findOpen, orderedItems, searchActive, useVirtual])
+
+  useEffect(() => {
+    const matches = findMatchesRef.current
+    if (!searchActive || !findOpen || matches.length === 0) return
+
+    const nextIndex = Math.min(activeFindMatch, matches.length - 1)
+    updateActiveFindHighlight(nextIndex)
+    matches[nextIndex]?.scrollIntoView({ block: 'center', inline: 'nearest' })
+  }, [activeFindMatch, findMatchCount, findOpen, searchActive, updateActiveFindHighlight])
+
   return (
     <div className="flex flex-1 min-h-0 relative" data-component-id="prose-chain-root">
+      <DesktopFindBar
+        open={searchActive && findOpen}
+        query={findQuery}
+        focusToken={findFocusToken}
+        matchCount={findMatchCount}
+        activeMatchIndex={activeFindMatch}
+        onQueryChange={(value) => {
+          if (value === findQuery) return
+          onFindQueryChange(value)
+          setActiveFindMatch(0)
+        }}
+        onNext={() => moveFindSelection(1)}
+        onPrevious={() => moveFindSelection(-1)}
+        onClose={closeFind}
+      />
       <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0" data-component-id="prose-chain-scroll">
         {/* Cover image banner */}
         {coverImage && (
