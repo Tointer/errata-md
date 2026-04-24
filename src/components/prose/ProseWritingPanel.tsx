@@ -282,7 +282,6 @@ export function ProseWritingPanel({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [activeFindMatch, setActiveFindMatch] = useState(0)
   const [findMatchCount, setFindMatchCount] = useState(0)
-  const [debouncedFindQuery, setDebouncedFindQuery] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const transformUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -485,19 +484,9 @@ export function ProseWritingPanel({
   }, [editor, findMatchCount])
 
   useEffect(() => {
-    const trimmed = findQuery.trim()
-    const timeout = window.setTimeout(() => {
-      setDebouncedFindQuery(trimmed)
-      setActiveFindMatch(0)
-    }, 180)
-
-    return () => window.clearTimeout(timeout)
-  }, [findQuery])
-
-  useEffect(() => {
     if (!editor) return
 
-    const query = findOpen ? debouncedFindQuery : ''
+    const query = findOpen ? findQuery.trim() : ''
     editor.view.dispatch(editor.state.tr.setMeta(proseEditorFindPluginKey, {
       query,
       activeIndex: 0,
@@ -513,7 +502,7 @@ export function ProseWritingPanel({
       editor.commands.setTextSelection(first)
       editor.commands.scrollIntoView()
     }
-  }, [debouncedFindQuery, editor, findOpen, fragmentId])
+  }, [editor, findOpen, findQuery, fragmentId])
 
   useEffect(() => {
     if (!editor) return
@@ -541,6 +530,12 @@ export function ProseWritingPanel({
     editor.commands.setTextSelection(match)
     editor.commands.scrollIntoView()
   }, [activeFindMatch, editor, findMatchCount, findOpen])
+
+  const handleFindQueryChange = useCallback((value: string) => {
+    if (value === findQuery) return
+    onFindQueryChange(value)
+    setActiveFindMatch(0)
+  }, [findQuery, onFindQueryChange])
 
   // Track selection reactively
   const [hasSelection, setHasSelection] = useState(false)
@@ -779,11 +774,7 @@ export function ProseWritingPanel({
         focusToken={findFocusToken}
         matchCount={findMatchCount}
         activeMatchIndex={activeFindMatch}
-        onQueryChange={(value) => {
-          if (value === findQuery) return
-          onFindQueryChange(value)
-          setActiveFindMatch(0)
-        }}
+        onQueryChange={handleFindQueryChange}
         onNext={() => moveFindSelection(1)}
         onPrevious={() => moveFindSelection(-1)}
         onClose={closeFind}

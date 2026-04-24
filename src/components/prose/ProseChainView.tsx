@@ -208,7 +208,6 @@ export function ProseChainView({
   const [activeIndex, setActiveIndex] = useState(0)
   const [activeFindMatch, setActiveFindMatch] = useState(0)
   const [findMatchCount, setFindMatchCount] = useState(0)
-  const [debouncedFindQuery, setDebouncedFindQuery] = useState('')
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const [quickSwitch] = useQuickSwitch()
   const [proseWidth] = useProseWidth()
@@ -430,7 +429,7 @@ export function ProseChainView({
   }, [coverImage, getViewport])
 
   // Whether to use virtualization (skip for short lists)
-  const useVirtual = orderedItems.length > 10 && !(searchActive && findOpen && debouncedFindQuery.length > 0)
+  const useVirtual = orderedItems.length > 10 && !(searchActive && findOpen && findQuery.length > 0)
 
   const virtualizer = useVirtualizer({
     count: orderedItems.length,
@@ -603,19 +602,9 @@ export function ProseChainView({
   }, [closeFind, findOpen, moveFindSelection, searchActive])
 
   useEffect(() => {
-    const trimmed = findQuery.trim()
-    const timeout = window.setTimeout(() => {
-      setDebouncedFindQuery(trimmed)
-      setActiveFindMatch(0)
-    }, 180)
-
-    return () => window.clearTimeout(timeout)
-  }, [findQuery])
-
-  useEffect(() => {
     clearFindHighlights()
 
-    const query = debouncedFindQuery
+    const query = findQuery.trim()
     if (!searchActive || !findOpen || !query) {
       setFindMatchCount(0)
       return
@@ -684,7 +673,13 @@ export function ProseChainView({
     }
 
     setActiveFindMatch((current) => Math.min(current, matches.length - 1))
-  }, [clearFindHighlights, debouncedFindQuery, findOpen, orderedItems, searchActive, useVirtual])
+  }, [clearFindHighlights, findOpen, findQuery, orderedItems, searchActive, useVirtual])
+
+  const handleFindQueryChange = useCallback((value: string) => {
+    if (value === findQuery) return
+    onFindQueryChange(value)
+    setActiveFindMatch(0)
+  }, [findQuery, onFindQueryChange])
 
   useEffect(() => {
     const matches = findMatchesRef.current
@@ -703,11 +698,7 @@ export function ProseChainView({
         focusToken={findFocusToken}
         matchCount={findMatchCount}
         activeMatchIndex={activeFindMatch}
-        onQueryChange={(value) => {
-          if (value === findQuery) return
-          onFindQueryChange(value)
-          setActiveFindMatch(0)
-        }}
+        onQueryChange={handleFindQueryChange}
         onNext={() => moveFindSelection(1)}
         onPrevious={() => moveFindSelection(-1)}
         onClose={closeFind}
