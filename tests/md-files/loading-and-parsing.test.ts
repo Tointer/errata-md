@@ -141,7 +141,9 @@ describe('md-files loading and parsing', () => {
       expect(loaded?.name).toBe('Mira Vale')
       expect(loaded?.sticky).toBe(true)
       expect(loaded?.content).toBe('A former courier who memorizes whole districts by smell.')
-      expect(loaded?.meta.frozenSections).toBeUndefined()
+      expect(loaded?.meta.frozenSections).toEqual([
+        { id: 'fs-md-leading', text: 'A former courier who memorizes whole districts by smell.' },
+      ])
     } finally {
       await tmp.cleanup()
     }
@@ -162,7 +164,9 @@ describe('md-files loading and parsing', () => {
       expect(loaded?.name).toBe('Glass Coast')
       expect(loaded?.sticky).toBe(true)
       expect(loaded?.content).toBe('The coast sings at low tide because of the buried shard fields.')
-      expect(loaded?.meta.frozenSections).toBeUndefined()
+      expect(loaded?.meta.frozenSections).toEqual([
+        { id: 'fs-md-leading', text: 'The coast sings at low tide because of the buried shard fields.' },
+      ])
     } finally {
       await tmp.cleanup()
     }
