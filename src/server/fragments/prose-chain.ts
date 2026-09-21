@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import type { ProseChain } from './schema'
-import { getContentRoot } from './branches'
 import { writeJsonAtomic } from '../fs-utils'
 import { withKeyLock } from '../async-lock'
+import { getStoryInternalPath } from '../storage/story-layout'
+import { getMarkdownStoryRepository } from '../md-files/markdown-story-repository'
 
 /** Serializes read-modify-write of a story's prose chain to prevent lost updates. */
 function lockKey(storyId: string): string {
@@ -14,8 +14,7 @@ function lockKey(storyId: string): string {
 const PROSE_CHAIN_FILE = 'prose-chain.json'
 
 async function proseChainPath(dataDir: string, storyId: string): Promise<string> {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, PROSE_CHAIN_FILE)
+  return getStoryInternalPath(dataDir, storyId, PROSE_CHAIN_FILE)
 }
 
 /**
@@ -44,6 +43,9 @@ export async function saveProseChain(
 ): Promise<void> {
   const path = await proseChainPath(dataDir, storyId)
   await writeJsonAtomic(path, chain)
+  const repository = getMarkdownStoryRepository()
+  await repository.syncProseOrder(dataDir, storyId)
+  await repository.syncCompiledStory(dataDir, storyId)
 }
 
 /**

@@ -1,5 +1,8 @@
 # Documentation Index
 
+- `docs/markdown-vaults.md`
+  - Fork-specific Markdown source-of-truth layout, filename/frontmatter rules,
+    archiving, vault selection, internal state, and timeline compatibility.
 - `docs/fragments-and-prose-chain.md`
   - Fragment system and prose chain: complete schema reference, fragment types, ID conventions, prose chain structure, filesystem storage layout, full API reference, import/export format, SillyTavern character card import (PNG + JSON with lorebook/world book support), and porting guide.
 - `docs/context-blocks.md`

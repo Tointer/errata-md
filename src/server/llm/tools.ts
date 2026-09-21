@@ -297,7 +297,7 @@ export function createFragmentTools(
             return { error: `Unknown fragment type "${type}". Known types: ${known}` }
           }
         }
-        const id = generateFragmentId(type)
+        const id = generateFragmentId(type, name)
         const now = new Date().toISOString()
         const fragment: Fragment = {
           id,

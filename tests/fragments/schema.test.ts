@@ -8,14 +8,14 @@ import {
 
 describe('FragmentIdSchema', () => {
   it('accepts valid fragment IDs', () => {
-    const valid = ['pr-a1b2', 'ch-x9y8', 'gl-m3n4', 'kn-p5q6', 'na-abcd1234']
+    const valid = ['pr-a1b2', 'ch-x9y8', 'gl-m3n4', 'kn-p5q6', 'na-abcd1234', 'ch-a', 'kn-glass-coast']
     for (const id of valid) {
       expect(() => FragmentIdSchema.parse(id)).not.toThrow()
     }
   })
 
   it('rejects invalid fragment IDs', () => {
-    const invalid = ['', 'prose-abc', 'PR-A1B2', 'pr_a1b2', 'p-abc', 'pr-ab', 'pr-ABC!']
+    const invalid = ['', 'prose-abc', 'PR-A1B2', 'pr_a1b2', 'p-abc', 'pr-ABC!']
     for (const id of invalid) {
       expect(() => FragmentIdSchema.parse(id)).toThrow()
     }

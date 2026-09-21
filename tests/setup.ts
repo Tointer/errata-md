@@ -24,6 +24,7 @@ export function makeTestSettings(overrides?: Partial<StorySettings>): StorySetti
     disableLibrarianDirections: false,
     disableLibrarianSuggestions: false,
     disableThinking: false,
+    expandThoughtsByDefault: true,
     contextOrderMode: 'simple',
     fragmentOrder: [],
     customFragmentTypes: [],

@@ -1,11 +1,8 @@
 import { Elysia, t } from 'elysia'
 import { withStory } from './_helpers'
+import { getStory } from '../fragments/storage'
 import {
   getBranchesIndex,
-  switchActiveBranch,
-  createBranch,
-  deleteBranch,
-  renameBranch,
 } from '../fragments/branches'
 
 export function branchRoutes(dataDir: string) {
@@ -16,21 +13,15 @@ export function branchRoutes(dataDir: string) {
       detail: { summary: 'List all branches' },
     })
 
-    .post('/stories/:storyId/branches', withStory(dataDir, async (_story, { params, body, set }) => {
-      try {
-        const branch = await createBranch(
-          dataDir,
-          params.storyId,
-          body.name,
-          body.parentBranchId,
-          body.forkAfterIndex,
-        )
-        return branch
-      } catch (err) {
-        set.status = 400
-        return { error: err instanceof Error ? err.message : 'Failed to create branch' }
+    .post('/stories/:storyId/branches', async ({ params, body, set }) => {
+      if (!await getStory(dataDir, params.storyId)) {
+        set.status = 404
+        return { error: 'Story not found' }
       }
-    }), {
+      void body
+      set.status = 410
+      return { error: 'Timelines are unavailable for Markdown vaults.' }
+    }, {
       body: t.Object({
         name: t.String(),
         parentBranchId: t.String(),
@@ -39,45 +30,48 @@ export function branchRoutes(dataDir: string) {
       detail: { summary: 'Create a new branch' },
     })
 
-    .patch('/stories/:storyId/branches/active', withStory(dataDir, async (_story, { params, body, set }) => {
-      try {
-        await switchActiveBranch(dataDir, params.storyId, body.branchId)
-        return { ok: true }
-      } catch (err) {
-        set.status = 400
-        return { error: err instanceof Error ? err.message : 'Failed to switch branch' }
+    .patch('/stories/:storyId/branches/active', async ({ params, body, set }) => {
+      if (!await getStory(dataDir, params.storyId)) {
+        set.status = 404
+        return { error: 'Story not found' }
       }
-    }), {
+      if (body.branchId === 'main') {
+        return { ok: true }
+      }
+      set.status = 410
+      return { error: 'Timelines are unavailable for Markdown vaults.' }
+    }, {
       body: t.Object({
         branchId: t.String(),
       }),
       detail: { summary: 'Switch the active branch' },
     })
 
-    .put('/stories/:storyId/branches/:branchId', withStory(dataDir, async (_story, { params, body, set }) => {
-      try {
-        const branch = await renameBranch(dataDir, params.storyId, params.branchId, body.name)
-        return branch
-      } catch (err) {
-        set.status = 400
-        return { error: err instanceof Error ? err.message : 'Failed to rename branch' }
+    .put('/stories/:storyId/branches/:branchId', async ({ params, body, set }) => {
+      if (!await getStory(dataDir, params.storyId)) {
+        set.status = 404
+        return { error: 'Story not found' }
       }
-    }), {
+      if (params.branchId === 'main' && body.name === 'Main') {
+        return (await getBranchesIndex(dataDir, params.storyId)).branches[0]
+      }
+      set.status = 410
+      return { error: 'Timelines are unavailable for Markdown vaults.' }
+    }, {
       body: t.Object({
         name: t.String(),
       }),
       detail: { summary: 'Rename a branch' },
     })
 
-    .delete('/stories/:storyId/branches/:branchId', withStory(dataDir, async (_story, { params, set }) => {
-      try {
-        await deleteBranch(dataDir, params.storyId, params.branchId)
-        return { ok: true }
-      } catch (err) {
-        set.status = 400
-        return { error: err instanceof Error ? err.message : 'Failed to delete branch' }
+    .delete('/stories/:storyId/branches/:branchId', async ({ params, set }) => {
+      if (!await getStory(dataDir, params.storyId)) {
+        set.status = 404
+        return { error: 'Story not found' }
       }
-    }), {
+      set.status = 410
+      return { error: 'Timelines are unavailable for Markdown vaults.' }
+    }, {
       detail: { summary: 'Delete a branch' },
     })
 }

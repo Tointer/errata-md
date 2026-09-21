@@ -1,10 +1,10 @@
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
 import { GlobalConfigSchema, type GlobalConfig, type ProviderConfig, type SharingConfig, type ErratanetConfig } from './schema'
 import { writeJsonAtomic } from '../fs-utils'
+import { getGlobalStoragePath, resolveGlobalDataDir } from '../storage/global-layout'
 
 function configPath(dataDir: string): string {
-  return join(dataDir, 'config.json')
+  return getGlobalStoragePath(dataDir, 'config.json')
 }
 
 export async function getGlobalConfig(dataDir: string): Promise<GlobalConfig> {
@@ -39,7 +39,7 @@ export async function updateErratanetConfig(dataDir: string, patch: Partial<Erra
 }
 
 export async function saveGlobalConfig(dataDir: string, config: GlobalConfig): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true })
+  await fs.mkdir(resolveGlobalDataDir(dataDir), { recursive: true })
   await writeJsonAtomic(configPath(dataDir), config)
 }
 

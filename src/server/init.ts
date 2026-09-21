@@ -7,6 +7,7 @@ import { ensureOpenRouterOAuthCallbackBridge } from './openrouter-oauth-callback
 import type { WritingPlugin } from './plugins/types'
 import { mkdir, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { resolveGlobalDataDir } from './storage/global-layout'
 
 async function ensureStartupDirectories(dataDir: string, pluginDir?: string) {
   await mkdir(dataDir, { recursive: true })
@@ -44,6 +45,7 @@ const pluginModules = import.meta.glob<{ default: WritingPlugin }>(
 
 async function initializeApp() {
   const dataDir = process.env.DATA_DIR ?? './data'
+  const globalDataDir = resolveGlobalDataDir(dataDir)
 
   // Clear previous registrations (handles Vite HMR re-evaluation)
   pluginRegistry.clear()
@@ -62,7 +64,8 @@ async function initializeApp() {
   const allowExternalOverride = process.env.PLUGIN_EXTERNAL_OVERRIDE === '1'
 
   await ensureStartupDirectories(dataDir, externalPluginsDir)
-  await warnAboutOrphanedInstructionSets(dataDir)
+  await mkdir(globalDataDir, { recursive: true })
+  await warnAboutOrphanedInstructionSets(globalDataDir)
 
   if (externalPluginsDir) {
     try {

@@ -13,6 +13,10 @@ function makeBridge(): ErrataDesktop {
     skipUpdate: async () => ({ autoInstall: false, skippedVersion: null }),
     installUpdate: async () => {},
     onUpdateState: () => () => {},
+    getVaultState: async () => ({ activeVaultPath: 'C:\\vault', globalDataDir: 'C:\\app', recentVaults: [] }),
+    chooseVault: async () => ({ canceled: false }),
+    forgetVault: async () => {},
+    openVault: async () => {},
   }
 }
 

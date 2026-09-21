@@ -77,7 +77,7 @@ export class FragmentTypeRegistry {
     this.register({
       type: 'character',
       prefix: 'ch',
-      stickyByDefault: false,
+      stickyByDefault: true,
       contextRenderer: (f) =>
         `## ${f.name}\n${f.content}`,
       llmTools: false,
@@ -96,7 +96,7 @@ export class FragmentTypeRegistry {
     this.register({
       type: 'knowledge',
       prefix: 'kn',
-      stickyByDefault: false,
+      stickyByDefault: true,
       contextRenderer: (f) =>
         `### ${f.name}\n${f.content}`,
       shortlistFields: ['id', 'name', 'description'],

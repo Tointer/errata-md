@@ -120,7 +120,7 @@ export async function applyFragmentSuggestion(args: {
     return { fragmentId: finalUpdated.id, created: false, updated: true }
   }
 
-  const id = suggestion.createdFragmentId ?? generateFragmentId(suggestion.type)
+  const id = suggestion.createdFragmentId ?? generateFragmentId(suggestion.type, suggestion.name)
   const now = new Date().toISOString()
   const fragment: Fragment = {
     id,

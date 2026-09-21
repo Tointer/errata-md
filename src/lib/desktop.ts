@@ -31,6 +31,18 @@ export interface DesktopUpdatePrefs {
   skippedVersion: string | null
 }
 
+export interface DesktopVaultSummary {
+  path: string
+  name: string
+  isActive: boolean
+}
+
+export interface DesktopVaultState {
+  activeVaultPath: string
+  globalDataDir: string
+  recentVaults: DesktopVaultSummary[]
+}
+
 export interface ErrataDesktop {
   isDesktop: true
   getVersion(): Promise<string>
@@ -47,6 +59,10 @@ export interface ErrataDesktop {
   installUpdate(): Promise<void>
   /** Subscribe to update-state pushes. Returns an unsubscribe function. */
   onUpdateState(cb: (state: DesktopUpdateState) => void): () => void
+  getVaultState(): Promise<DesktopVaultState>
+  chooseVault(path?: string): Promise<{ canceled: boolean }>
+  forgetVault(path: string): Promise<void>
+  openVault(path: string): Promise<void>
 }
 
 export function getDesktopBridge(): ErrataDesktop | null {

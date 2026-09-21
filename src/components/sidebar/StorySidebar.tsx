@@ -35,7 +35,6 @@ import {
   PenLine,
   Home,
   CircleHelp,
-  GitBranch,
   Radio,
   Library,
   WandSparkles,
@@ -320,19 +319,6 @@ export function StorySidebar({
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
-
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeSection === 'branches'}
-                    onClick={() => handleToggle('branches')}
-                    tooltip="Timelines"
-                    data-component-id="sidebar-section-branches"
-                  >
-                    <GitBranch className="size-4" />
-                    <span>Timelines</span>
-                    <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
 
                 <SidebarMenuItem key={"media"}>
                   <SidebarMenuButton

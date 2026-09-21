@@ -14,6 +14,8 @@
     "package:binary": "bun scripts/package-binary.mjs",
     "release:binary": "bun run build:binary && bun run package:binary",
     "electron:dev": "bun scripts/electron-dev.mjs",
+    "electron:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/electron-start.ps1",
+    "electron:shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/electron-start.ps1 -CreateShortcut",
     "electron:pack": "bun install --frozen-lockfile && bun scripts/build-electron.mjs --dir",
     "electron:dist": "bun install --frozen-lockfile && bun scripts/build-electron.mjs",
     "electron:release": "bun install --frozen-lockfile && bun scripts/build-electron.mjs --publish=always",

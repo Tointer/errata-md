@@ -2,6 +2,8 @@
 
 An LLM assisted writing app built around a fragment system. Prose, characters, guidelines, and knowledge are composable fragments that assemble into structured LLM context for story generation.
 
+This fork keeps Errata's upstream application and Bun sidecar architecture while making Markdown files in a selectable vault the source of truth for story content. See [Markdown vaults](docs/markdown-vaults.md).
+
 Join the community on Discord: https://discord.gg/ywVFKvdH49
 
 ![Main editor view](docs/imgs/initial-view.png)
@@ -54,6 +56,24 @@ bun run dev
 ```
 
 Open `http://localhost:7739`. Configure an LLM provider in the onboarding wizard or Settings > Providers.
+
+### Fast desktop launch (Windows)
+
+Build the production app once and create a desktop shortcut:
+
+```powershell
+bun run electron:pack
+bun run electron:shortcut
+```
+
+Double-click **Errata Markdown** on your desktop to open the compiled app without
+starting Vite, installing dependencies, or rebuilding. You can also launch it with
+`bun run electron:start`. The shortcut points to `release/win-unpacked/Errata.exe`
+in this checkout, so keep that folder in place.
+
+After updating the source, close Errata and run `bun run electron:pack` again.
+The same shortcut will open the refreshed build. Vault selection is available
+inside the desktop app.
 
 ## Development
 
@@ -139,6 +159,7 @@ Plugins can register fragment types, LLM tools, API routes, and pipeline hooks. 
 ## Documentation
 
 - [Architecture & data model](PLAN.md)
+- [Markdown vaults](docs/markdown-vaults.md)
 - [Generation pipeline](docs/generation-pipeline.md)
 - [Context block system](docs/context-blocks.md)
 - [Instruction registry](docs/instruction-registry.md)

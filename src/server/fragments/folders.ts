@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { generateFolderId } from '@/lib/fragment-ids'
 import { writeJsonAtomic } from '../fs-utils'
+import { getStoryDir, getStoryInternalPath } from '../storage/story-layout'
+import { join } from 'node:path'
 
 export interface Folder {
   id: string
@@ -20,11 +21,13 @@ interface FoldersIndex {
 }
 
 function foldersPath(dataDir: string, storyId: string): string {
-  return join(dataDir, 'stories', storyId, 'folders.json')
+  return getStoryInternalPath(dataDir, storyId, 'folders.json')
 }
 
 async function readIndex(dataDir: string, storyId: string): Promise<FoldersIndex> {
-  const path = foldersPath(dataDir, storyId)
+  const internalPath = foldersPath(dataDir, storyId)
+  const legacyPath = join(getStoryDir(dataDir, storyId), 'folders.json')
+  const path = existsSync(internalPath) ? internalPath : legacyPath
   if (!existsSync(path)) return { folders: [], assignments: {} }
   const raw = await readFile(path, 'utf-8')
   const parsed = JSON.parse(raw) as Partial<FoldersIndex>

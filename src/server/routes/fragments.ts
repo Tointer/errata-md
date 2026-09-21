@@ -20,7 +20,7 @@ import {
   getRefs,
   getBackRefs,
 } from '../fragments/associations'
-import { generateFragmentId } from '@/lib/fragment-ids'
+import { deriveFragmentIdFromName, generateFragmentId, usesNameDerivedFragmentId } from '@/lib/fragment-ids'
 import { registry } from '../fragments/registry'
 import { reanalyzeAfterProseChange } from '../librarian/reanalyze'
 import { createLogger } from '../logging'
@@ -50,6 +50,8 @@ export function fragmentRoutes(dataDir: string) {
       if (body.id) {
         const existing = await getFragment(dataDir, params.storyId, body.id)
         id = existing ? generateFragmentId(body.type) : body.id
+      } else if (usesNameDerivedFragmentId(body.type)) {
+        id = deriveFragmentIdFromName(body.type, body.name)
       } else {
         id = generateFragmentId(body.type)
       }

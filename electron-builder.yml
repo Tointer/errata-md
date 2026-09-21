@@ -23,6 +23,7 @@ extraResources:
 asar: true
 
 win:
+  icon: public/ErrataLogo.ico
   target: nsis
   artifactName: ${productName}-${version}-windows-${arch}.${ext}
 

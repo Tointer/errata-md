@@ -10,7 +10,6 @@ import { StoryInfoPanel } from './StoryInfoPanel'
 import { SettingsView } from './SettingsView'
 import { LibrarianPanel } from './LibrarianPanel'
 import { ArchivePanel } from './ArchivePanel'
-import { TimelineManagerPanel } from './TimelineManagerPanel'
 import { FragmentTypesPanel } from './FragmentTypesPanel'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -238,10 +237,6 @@ export function DetailPanel({
 
       {activeSection === 'archive' && (
         <ArchivePanel storyId={storyId} onSelect={onSelectFragment} />
-      )}
-
-      {activeSection === 'branches' && (
-        <TimelineManagerPanel storyId={storyId} />
       )}
 
       {SECTION_TO_TYPE[activeSection] && (

@@ -50,7 +50,7 @@ export async function listStorySetupFragmentContext(
 function makeSetupFragment(draft: StorySetupDraftFragment, order: number): Fragment {
   const now = new Date().toISOString()
   return {
-    id: generateFragmentId(draft.type),
+    id: generateFragmentId(draft.type, draft.name),
     type: draft.type,
     name: draft.name,
     description: draft.description,

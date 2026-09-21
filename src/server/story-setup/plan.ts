@@ -111,7 +111,7 @@ function makeFragment(
 ): Fragment {
   const now = new Date().toISOString()
   return {
-    id: generateFragmentId(type),
+    id: generateFragmentId(type, name),
     type,
     name: name.slice(0, 100),
     description: description.slice(0, 50),

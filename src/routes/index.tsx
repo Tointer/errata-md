@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Trash2, Sparkles, BookOpen, Users, Scroll, Globe, Upload, ChevronRight, FileJson, AlertCircle, Clipboard, Camera, X, ImagePlus, Settings, Sun, Moon, Contrast } from 'lucide-react'
+import { Plus, Trash2, Sparkles, BookOpen, Users, Scroll, Globe, Upload, ChevronRight, FileJson, AlertCircle, Clipboard, Camera, X, ImagePlus, Settings, Sun, Moon, Contrast, FolderOpen, HardDrive } from 'lucide-react'
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import { ErrataLogo } from '@/components/ErrataLogo'
 import { ImportDialog } from '@/components/ImportDialog'
@@ -41,6 +41,7 @@ import { DesktopUpdatesControls } from '@/components/settings/DesktopUpdatesPane
 import { SectionHeading, SettingRow, SettingsCard, Toggle } from '@/components/settings/primitives'
 import { getStoryDisplayName } from '@/lib/story-display'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { getDesktopBridge } from '@/lib/desktop'
 
 const THEME_OPTIONS = [
   { value: 'light' as const, label: 'Light', Icon: Sun },
@@ -64,6 +65,7 @@ function StoryListPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showProviders, setShowProviders] = useState(false)
   const [fileDragOver, setFileDragOver] = useState(false)
+  const [showVaults, setShowVaults] = useState(false)
   const dragCounter = useRef(0)
 
   // Options section state
@@ -77,6 +79,18 @@ function StoryListPage() {
   const { data: stories, isLoading } = useQuery({
     queryKey: ['stories'],
     queryFn: api.stories.list,
+  })
+
+  const desktopBridge = getDesktopBridge()
+  const { data: vaultState } = useQuery({
+    queryKey: ['desktop-vault'],
+    queryFn: () => desktopBridge!.getVaultState(),
+    enabled: desktopBridge !== null,
+  })
+
+  const forgetVaultMutation = useMutation({
+    mutationFn: (path: string) => desktopBridge!.forgetVault(path),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['desktop-vault'] }),
   })
 
   const sortedStories = useMemo(() => {
@@ -410,6 +424,18 @@ function StoryListPage() {
             <h1><ErrataLogo variant="full" size={28} /></h1>
           </div>
           <div className="flex items-center gap-1">
+            {desktopBridge && vaultState && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="hidden max-w-56 gap-1.5 sm:flex"
+                onClick={() => setShowVaults(true)}
+                title={vaultState.activeVaultPath}
+              >
+                <HardDrive className="size-3.5 shrink-0" />
+                <span className="truncate">{vaultState.recentVaults.find((vault) => vault.isActive)?.name ?? 'Vault'}</span>
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -689,6 +715,51 @@ function StoryListPage() {
       )}
 
       <ImportDialog open={showImportDialog} onOpenChange={setShowImportDialog} />
+
+      {desktopBridge && vaultState && (
+        <Dialog open={showVaults} onOpenChange={setShowVaults}>
+          <DialogContent className="min-w-0 max-w-lg overflow-hidden">
+            <DialogHeader>
+              <DialogTitle className="font-display text-xl">Markdown vaults</DialogTitle>
+            </DialogHeader>
+            <div className="flex min-w-0 flex-col gap-3">
+              <div className="min-w-0 max-h-[min(55vh,28rem)] space-y-2 overflow-y-auto">
+                {vaultState.recentVaults.map((vault) => (
+                  <div key={vault.path} className="flex min-w-0 items-center gap-2 rounded-lg border border-border/60 p-3">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 overflow-hidden text-left"
+                      disabled={vault.isActive}
+                      onClick={() => void desktopBridge.chooseVault(vault.path)}
+                      title={vault.path}
+                    >
+                      <span className="block truncate text-sm font-medium">{vault.name}{vault.isActive ? ' (current)' : ''}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{vault.path}</span>
+                    </button>
+                    <Button size="icon" variant="ghost" onClick={() => void desktopBridge.openVault(vault.path)} title="Open folder" aria-label={`Open ${vault.name} folder`}>
+                      <FolderOpen className="size-4" />
+                    </Button>
+                    {!vault.isActive && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => forgetVaultMutation.mutate(vault.path)}
+                        title="Forget vault"
+                        aria-label={`Forget ${vault.name} vault`}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <Button className="w-full" variant="outline" onClick={() => void desktopBridge.chooseVault()}>
+                Choose another folder
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Global settings reachable from the start page: appearance, providers, about. */}
       <Dialog open={showSettings} onOpenChange={setShowSettings}>

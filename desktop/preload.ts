@@ -45,6 +45,10 @@ const errataDesktop = {
     ipcRenderer.on('errata:update:state', listener)
     return () => ipcRenderer.removeListener('errata:update:state', listener)
   },
+  getVaultState: () => ipcRenderer.invoke('errata:vault:get-state'),
+  chooseVault: (path?: string) => ipcRenderer.invoke('errata:vault:choose', path),
+  forgetVault: (path: string) => ipcRenderer.invoke('errata:vault:forget', path),
+  openVault: (path: string) => ipcRenderer.invoke('errata:vault:open', path),
 }
 
 contextBridge.exposeInMainWorld('errataDesktop', errataDesktop)

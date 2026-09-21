@@ -3,6 +3,22 @@
 All notable changes to Errata are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
+## [Unreleased]
+
+### Changed
+- Rebased the fork on Errata 1.11 and returned desktop packaging to the upstream
+  Electron shell with its Bun-compiled server sidecar.
+- Story content now uses human-readable Markdown vaults; app-only indexes,
+  version history, and global configuration remain separate from visible prose.
+- Desktop builds can select, switch, remember, and open vault folders.
+- Removed the generic storage backend and broad path abstraction in favor of a
+  focused Markdown repository and small story/global path helpers.
+
+### Compatibility
+- Existing Markdown stories and current upstream story ZIPs can be imported.
+- Upstream timeline APIs remain as a single `main` compatibility timeline;
+  alternate timelines are unavailable for Markdown vaults.
+
 ## [1.12.0] — 2026-09-14
 
 ### Added

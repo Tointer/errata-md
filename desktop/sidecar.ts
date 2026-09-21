@@ -5,7 +5,7 @@
  * server over http://127.0.0.1:<port>.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createServer } from 'node:net'
+import { createConnection, createServer } from 'node:net'
 import { existsSync, chmodSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { get as httpGet } from 'node:http'
@@ -14,14 +14,17 @@ import { app } from 'electron'
 export interface SidecarHandle {
   port: number
   child: ChildProcess
-  stop: () => void
+  stop: () => Promise<void>
 }
 
-const PREFERRED_DESKTOP_PORT = 3000
+// Keep port 3000 free for the OpenRouter OAuth callback bridge.
+const PREFERRED_DESKTOP_PORT = 7739
 
 /** The story/data directory the server runs against. Shared with the updater's backup. */
+let activeDataDir = join(app.getPath('userData'), 'data')
+
 export function errataDataDir(): string {
-  return join(app.getPath('userData'), 'data')
+  return activeDataDir
 }
 
 /** Ask the OS for a TCP port on loopback, then release it before spawning the sidecar. */
@@ -47,6 +50,24 @@ function reservePort(port: number): Promise<number> {
  * port so the app can still start.
  */
 async function findSidecarPort(): Promise<number> {
+  // On Windows, attempting a temporary loopback bind can succeed even when a
+  // wildcard listener already owns the port. Probe for an accepting listener
+  // first so the health check cannot accidentally target another application.
+  const alreadyListening = await new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host: '127.0.0.1', port: PREFERRED_DESKTOP_PORT })
+    const finish = (value: boolean) => {
+      socket.destroy()
+      resolve(value)
+    }
+    socket.setTimeout(300, () => finish(false))
+    socket.once('connect', () => finish(true))
+    socket.once('error', () => finish(false))
+  })
+  if (alreadyListening) {
+    console.warn(`[desktop] Port ${PREFERRED_DESKTOP_PORT} is already serving another process; using an ephemeral port.`)
+    return reservePort(0)
+  }
+
   try {
     return await reservePort(PREFERRED_DESKTOP_PORT)
   } catch (err) {
@@ -115,6 +136,8 @@ function killTree(child: ChildProcess) {
 }
 
 export interface StartSidecarOptions {
+  dataDir?: string
+  globalDataDir?: string
   /** Called if the server process exits before stop() was requested. */
   onUnexpectedExit?: (code: number | null) => void
 }
@@ -137,7 +160,8 @@ export async function startSidecar(options: StartSidecarOptions = {}): Promise<S
   }
 
   const port = await findSidecarPort()
-  const dataDir = errataDataDir()
+  const dataDir = options.dataDir ?? errataDataDir()
+  activeDataDir = dataDir
 
   const child = spawn(binaryPath, [], {
     cwd: dirname(binaryPath),
@@ -151,6 +175,7 @@ export async function startSidecar(options: StartSidecarOptions = {}): Promise<S
       HOST: '127.0.0.1',
       NITRO_HOST: '127.0.0.1',
       DATA_DIR: dataDir,
+      GLOBAL_DATA_DIR: options.globalDataDir ?? join(app.getPath('userData'), 'data'),
     },
   })
 
@@ -162,15 +187,20 @@ export async function startSidecar(options: StartSidecarOptions = {}): Promise<S
     if (!stopped) options.onUnexpectedExit?.(code)
   })
 
-  const stop = () => {
+  const stop = async () => {
     stopped = true
     killTree(child)
+    if (child.exitCode !== null || child.signalCode !== null) return
+    await new Promise<void>((resolve) => {
+      child.once('exit', () => resolve())
+      setTimeout(resolve, 2_000)
+    })
   }
 
   try {
     await waitForHealth(port)
   } catch (err) {
-    stop()
+    await stop()
     throw err
   }
 

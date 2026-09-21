@@ -500,29 +500,6 @@ export function ProseChainView({
     }
   }, [useVirtual, virtualizer, getViewport])
 
-  const branchFromMutation = useMutation({
-    mutationFn: async (sectionIndex: number) => {
-      const name = window.prompt('Timeline name:')
-      if (!name?.trim()) throw new Error('Cancelled')
-      const index = await api.branches.list(storyId)
-      return api.branches.create(storyId, {
-        name: name.trim(),
-        parentBranchId: index.activeBranchId,
-        forkAfterIndex: sectionIndex,
-      })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['branches', storyId] })
-      queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-    },
-  })
-
-  const handleBranchFrom = useCallback((sectionIndex: number) => {
-    branchFromMutation.mutate(sectionIndex)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchFromMutation.mutate])
-
   const handleMentionClick = useCallback((fragmentId: string) => {
     // Find the character fragment from the already-fetched prose fragments won't work;
     // we need to fetch the character fragment directly
@@ -597,7 +574,6 @@ export function ProseChainView({
                           onSelect={onSelectFragment}
                           onEdit={onEditProse}
                           onDebugLog={onDebugLog}
-                          onBranchFrom={handleBranchFrom}
                           onAskLibrarian={onAskLibrarian}
                           onAnalyze={handleAnalyze}
                           hasAnalysis={analyzedFragments.has(fragment.id)}
@@ -647,7 +623,6 @@ export function ProseChainView({
                           onSelect={onSelectFragment}
                           onEdit={onEditProse}
                           onDebugLog={onDebugLog}
-                          onBranchFrom={handleBranchFrom}
                           onAskLibrarian={onAskLibrarian}
                           onAnalyze={handleAnalyze}
                           hasAnalysis={analyzedFragments.has(fragment.id)}

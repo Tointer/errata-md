@@ -2,12 +2,13 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import type { LogEntry, LogSummary } from './types'
+import { getGlobalStoragePath } from '../storage/global-layout'
 
 const MAX_LOGS_PER_FILE = 1000
 const MAX_LOG_FILES = 5
 
 function logsDir(dataDir: string): string {
-  return join(dataDir, 'logs')
+  return getGlobalStoragePath(dataDir, 'logs')
 }
 
 function logFilePath(dataDir: string, index: number): string {

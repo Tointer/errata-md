@@ -1,17 +1,15 @@
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { AssociationsSchema, type Associations } from './schema'
 import { getFragment, updateFragment } from './storage'
 import { createLogger } from '../logging/logger'
-import { getContentRoot } from './branches'
 import { writeJsonAtomic } from '../fs-utils'
+import { getStoryInternalPath } from '../storage/story-layout'
 
 const log = createLogger('tags')
 
 async function associationsPath(dataDir: string, storyId: string): Promise<string> {
-  const root = await getContentRoot(dataDir, storyId)
-  return join(root, 'associations.json')
+  return getStoryInternalPath(dataDir, storyId, 'associations.json')
 }
 
 export async function getAssociations(
