@@ -1,174 +1,176 @@
-# Errata
+# errata-md
 
-An LLM assisted writing app built around a fragment system. Prose, characters, guidelines, and knowledge are composable fragments that assemble into structured LLM context for story generation.
+This repository is a fork of the original [Errata](https://github.com/nokusukun/errata). The goal of this fork is not to redesign the core writing model, but to push Errata toward a filesystem-first workflow where story data is readable, movable, and configurable from markdown files.
 
-This fork keeps Errata's upstream application and Bun sidecar architecture while making Markdown files in a selectable vault the source of truth for story content. See [Markdown vaults](docs/markdown-vaults.md).
+## Why
 
-Join the community on Discord: https://discord.gg/ywVFKvdH49
+Mostly because I want to use it alongside Obsidian. I can create an Errata vault inside an Obsidian vault, making it convenient to move text from the Obsidian "idea space" to Errata files and back.
 
-![Main editor view](docs/imgs/initial-view.png)
+It is also friendlier to external agents, since they can work with story content by reading and editing `.md` files.
 
-## Features
+## What Is Different In This Fork
 
-- **Fragment system** — everything is a fragment with tags, refs, sticky/system placement, and version history
-- **Prose chain + writing panel** — branchable prose with regenerate/refine/switch/remove, selection transforms (rewrite/expand/compress), and a dedicated long-form editor view
-- **Two-phase prewriter** — optional planner agent distills full context into a focused writing brief before the writer generates, keeping output grounded while reducing token waste
-- **Per-role model selection** — assign different providers and models—including native Google Gemini—to generation, librarian, character chat, directions, and individual agents with automatic fallback chains
-- **Story direction suggestions** — AI-generated "what happens next?" options with customizable prompt templates and guided direction mode
-- **Character Chat mode** — story-scoped chat with streaming responses, provider/model selection, and character portraits
-- **Block-based context** — visual editor for reordering, overriding, and extending LLM prompt structure, including JavaScript-powered script blocks with live preview
-- **Agent context panel** — per-agent block editor for customizing any agent's prompt, disabling tools, and setting model overrides
-- **Librarian memory tools** — rolling continuity, hierarchical summaries, contradiction tracking, and summary compaction controls
-- **Universal import/export** — drag-and-drop JSON, bundle ZIPs, and SillyTavern/Tavern cards (PNG/JSON with lorebook support)
-- **Story cover images** — cover art with gallery grid layout on the story list
-- **Plugin system** — bundled + external runtime plugins with iframe UI panels
-- **Onboarding wizard + in-app help** — first-run setup flow and contextual help articles
-- **Custom CSS** — user-defined styling for theming the interface
-- **No database** — filesystem storage, compiles to a single binary
+The original app's core ideas are still here: fragment-based writing, block-driven context assembly, plugin support, and model-assisted prose workflows. The main differences are in storage, packaging, and product direction.
 
-### Story Wizard
+### Filesystem-first story storage
 
-Talk through any starting point with Errata, from a rough premise to a character, scene, or mood. A live checklist tracks useful gaps while editable guidelines, characters, knowledge, and opening prose are created and revised as the conversation develops. Open the story whenever you are ready; there is no separate creation step.
+This fork treats the filesystem as the source of truth.
 
-### Characters & Fragments
+- Story content, LLM guidelines, character cards, and lore fragments are synced to markdown files instead of living in internal storage.
+- Story settings and metadata are preserved in `.errata/_story.md`.
+- Human-facing content is kept in visible folders.
+- App-only internal state is pushed under `.errata/` so the story root stays understandable.
 
-Browse and edit fragments in the sidebar. Characters, guidelines, and knowledge all work the same way.
+Current story layout:
 
-![Character panel](docs/imgs/character-panel.png)
+```text
+<vault>/stories/<story-id>/
+  story.md
+  Guidelines/
+  Characters/
+  Lorebook/
+  Prose/
+  .errata/
+    _story.md
+```
 
-### Debug Panel
+`story.md` is a compiled reading view. Files in the visible folders are the source of truth for story content.
 
-Inspect the full LLM prompt, tool calls, and token usage for any generation.
+### Desktop and runtime
 
-![Debug panel](docs/imgs/debug-window.png)
+This version keeps the upstream Electron desktop shell and Bun server sidecar. The desktop app lets you choose a vault folder and reopen recent vaults. Provider configuration and application logs stay in the global application-data directory; story content stays in the selected vault.
 
-### Character Chat
+### Sacrifices
 
-Switch from prose view to Character Chat to run in-world conversations with your configured providers and saved chat history.
+- Native story timelines are disabled for Markdown vaults; only the compatibility timeline `Main` remains. Duplicate a story folder when you need a separate version.
 
-## Quick Start
+### Archive behavior
+
+- A fragment is treated as archived when its markdown file lives inside an `Archive/` subfolder under its normal type folder.
+- Moving a file into `Guidelines/Archive/`, `Characters/Archive/`, `Lorebook/Archive/`, or `Prose/Archive/` archives it.
+- Moving it back out restores it.
+- The app surfaces that as `archived` state in listings, but the source of truth is the file location, not a persisted frontmatter flag.
+
+
+## Markdown Formatting Rules
+
+Errata reads visible story files directly from markdown. Supported visible folders:
+
+- `Guidelines/` → guideline fragments
+- `Characters/` → character fragments
+- `Lorebook/` → knowledge fragments
+- `Prose/` → prose fragments
+
+Each of those folders may also contain an `Archive/` subfolder. Files inside that subfolder are considered archived and are excluded from normal fragment listings.
+
+### Filename rules
+
+- In `Guidelines/`, `Characters/`, and `Lorebook/`, the filename becomes the fragment name.
+- For those same folders, the fragment ID is normally derived from the filename, so you do not need to write `id`, `name`, or `type` in frontmatter. Errata may preserve an explicit `id` when you rename a fragment in the app so references remain valid.
+- In `Prose/`, filenames are managed by Errata because section order is encoded into them.
+
+### Frontmatter
+
+Frontmatter is optional.
+
+If present, use standard markdown frontmatter at the top of the file:
+
+```md
+---
+description: "Short description"
+tags: ["tone", "scene"]
+refs: ["ch-mira-vale"]
+sticky: true
+placement: "user"
+order: 0
+meta: {"someFlag":true}
+---
+Your fragment content here.
+```
+
+Values are parsed as JSON-like scalar values because Errata writes frontmatter using JSON serialization. In practice that means:
+
+- strings should be quoted when you write them manually
+- arrays should use JSON array syntax
+- booleans are `true` / `false`
+- objects can be written into `meta` if needed, though most users should avoid editing `meta` directly
+
+### Default values when frontmatter is missing
+
+If you create a bare `.md` file with no frontmatter, Errata fills in defaults.
+
+- `description`: empty string
+- `tags`: empty list
+- `refs`: empty list
+- `placement`: `user`
+- `order`: `0`
+- `sticky`: `true` for guidelines, characters, and lore; other types use their registered defaults
+
+### Freezing rules for markdown files
+
+For `Guidelines/`, `Characters/`, and `Lorebook/`, markdown body text is treated as frozen by default.
+
+- If a file has no delimiter, the entire body is considered frozen.
+- If a file contains `<!-- editable -->`, everything before that delimiter is treated as frozen.
+- Everything after that delimiter is treated as editable.
+- Set `editable: true` in frontmatter to opt out of the default body freeze. Existing explicit frozen sections in `meta` still apply.
+
+Example:
+
+```md
+Core canon that AI should preserve exactly.
+
+<!-- editable -->
+
+Session-specific notes that Errata may update.
+```
+
+### What Errata writes back
+
+When Errata saves visible markdown fragments, it may write:
+
+- frontmatter for supported fields, including `editable: true` for fully editable fragments
+- the `<!-- editable -->` delimiter when a fragment has a frozen leading section and a separate editable tail
+
+Visible markdown files normally do not need `id`, `type`, `createdAt`, or `updatedAt`. Errata derives those from folder structure, filenames, and `.errata/` internal records, with an explicit `id` retained when needed to preserve a renamed fragment's identity.
+
+### Internal data
+
+App-only state stays under `.errata/`.
+
+- story settings and metadata
+- timestamps and version history
+- prose ordering metadata
+- librarian state
+- other internal indexes
+
+That means the visible markdown files stay relatively clean while Errata still keeps the internal bookkeeping it needs.
+
+## Getting Started
+
+Clone this fork and start the development server with Bun:
 
 ```bash
-git clone https://github.com/tealios/errata.git
-cd errata
+git clone https://github.com/Tointer/errata-md.git
+cd errata-md
 bun install
 bun run dev
 ```
 
-Open `http://localhost:7739`. Configure an LLM provider in the onboarding wizard or Settings > Providers.
+Open `http://localhost:7739` and configure an LLM provider in the onboarding wizard or Settings > Providers. Set `DATA_DIR` before starting the server to use a specific vault folder.
 
-### Fast desktop launch (Windows)
+### Desktop on Windows
 
-Build the production app once and create a desktop shortcut:
+Build the desktop app and create a shortcut:
 
 ```powershell
 bun run electron:pack
 bun run electron:shortcut
 ```
 
-Double-click **Errata Markdown** on your desktop to open the compiled app without
-starting Vite, installing dependencies, or rebuilding. You can also launch it with
-`bun run electron:start`. The shortcut points to `release/win-unpacked/Errata.exe`
-in this checkout, so keep that folder in place.
-
-After updating the source, close Errata and run `bun run electron:pack` again.
-The same shortcut will open the refreshed build. Vault selection is available
-inside the desktop app.
-
-## Development
-
-One-click setup on Windows -- installs Git and Bun if needed, clones/pulls the repo, installs dependencies, and starts the dev server:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
-```
-
-Or run it directly from the web without cloning first:
-
-```powershell
-irm https://raw.githubusercontent.com/tealios/errata/master/scripts/setup.ps1 | iex
-```
-
-## Download
-
-Pre-built binaries are available on the [Releases](https://github.com/tealios/errata/releases) page for Windows, Linux, and macOS. Extract the zip and run — no runtime dependencies required.
-
-```bash
-# Windows
-errata.exe
-
-# Linux
-chmod +x errata
-./errata
-
-# macOS — remove quarantine attribute first
-xattr -cr errata
-chmod +x errata
-./errata
-```
-
-Set `DATA_DIR` to control where story data is stored (default: `./data`).
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATA_DIR` | `./data` | Story data directory |
-| `PORT` | `7739` | Server port |
-| `PLUGIN_DIR` | — | External plugin directory |
-
-LLM providers can also be configured in the UI under Settings > Providers.
-
-## Scripts
-
-```bash
-bun run dev              # Development server
-bun run build            # Production build
-bun run test             # Run tests
-bun run new:plugin       # Scaffold a plugin from template
-bun run build:binary     # Compile to standalone binary
-bun run release:binary   # Build + package zip bundle
-```
-
-## Project Layout
-
-```
-src/                    App code (routes, server, components, lib)
-  server/               Elysia API, fragments, blocks, LLM, agents, librarian
-  components/           React UI (prose, fragments, blocks, generation, sidebar)
-  lib/api/              Typed frontend API client
-plugins/                Bundled plugins (diceroll, keybinds, names) + templates
-packages/               Plugin SDK (@tealios/errata-plugin-sdk)
-tests/                  Vitest suites
-docs/                   Documentation
-```
-
-## Stack
-
-Bun, TanStack Start + React 19, Elysia, Zod v4, Vercel AI SDK v6, Tailwind v4 + shadcn/ui, Vitest.
-
-## Plugins
-
-Plugins can register fragment types, LLM tools, API routes, and pipeline hooks. External plugins are loaded from `PLUGIN_DIR` at runtime with iframe-based UI panels.
-
-- [Plugin authoring guide](docs/third-party-plugins.md)
-- [Runtime plugins + binary packaging](docs/runtime-plugins-and-binary-packaging.md)
-- [Plugin templates](plugins/templates/README.md)
-- SDK: `@tealios/errata-plugin-sdk`
+Open **Errata Markdown** from your desktop, or run `bun run electron:start`. Choose your vault in the story library. The shortcut points to `release/win-unpacked/Errata.exe` in this checkout, so keep that folder in place. After updating the source, close the app and run `bun run electron:pack` again.
 
 ## Documentation
 
-- [Architecture & data model](PLAN.md)
 - [Markdown vaults](docs/markdown-vaults.md)
-- [Generation pipeline](docs/generation-pipeline.md)
-- [Context block system](docs/context-blocks.md)
-- [Instruction registry](docs/instruction-registry.md)
-- [Character Chat](docs/character-chat.md)
-- [Prose Writing Panel](docs/prose-writing-panel.md)
-- [Component ID contract](docs/component-ids.md)
-- [Publishing the plugin SDK](docs/publishing-plugin-sdk.md)
-- [Full docs index](docs/README.md)
-
----
-
-Built by [nokusukun](https://github.com/nokusukun)
+- [Full documentation index](docs/README.md)
